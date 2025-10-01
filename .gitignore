@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.venv/
+
+# Project outputs
+outputs/
+
+# Editors/IDE
+.idea/
+.vscode/
+
