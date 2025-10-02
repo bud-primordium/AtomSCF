@@ -60,16 +60,9 @@ def ex_dirac_density(n_up: np.ndarray, n_dn: np.ndarray) -> np.ndarray:
 
 
 def _pz81_params(polarized: bool):
-    """PZ81 参数集。
-
-    返回 (A, B, C, D, gamma, beta1, beta2)。
-    取值来自 Perdew–Zunger 1981（Ceperley–Alder 拟合）。
-    """
-    if not polarized:
-        # 非极化（zeta=0）
-        return 0.031091, -0.048, 0.0020, -0.0116, -0.1423, 1.0529, 0.3334
-    # 全极化（zeta=1）
-    return 0.015545, -0.0269, 0.0007, -0.0048, -0.0843, 1.3981, 0.2611
+    """PZ81 参数集（集中于 constants.PZ81_PARAMS）。"""
+    key = "polarized" if polarized else "unpolarized"
+    return PZ81_PARAMS[key]
 
 
 def _pz81_eps_and_depsdrs(rs: np.ndarray, polarized: bool) -> tuple[np.ndarray, np.ndarray]:
@@ -182,4 +175,4 @@ def lda_c_pz81(n_up: np.ndarray, n_dn: np.ndarray) -> tuple[np.ndarray, np.ndarr
 
     e_c = n * eps
     return eps, vcu, vcd, e_c
-
+from .constants import PZ81_PARAMS

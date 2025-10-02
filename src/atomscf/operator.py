@@ -8,6 +8,9 @@ from .utils import normalize_radial_u
 __all__ = [
     "radial_hamiltonian_matrix",
     "solve_bound_states_fd",
+    "radial_hamiltonian_matrix_linear_fd5",
+    "solve_bound_states_fd5",
+    "solve_bound_states_fd5_auxlinear",
 ]
 
 
@@ -191,3 +194,134 @@ def solve_bound_states_fd(
 
     return eps, U_out
 
+
+def _is_uniform_linear_grid(r: np.ndarray, tol: float = 1e-12) -> tuple[bool, float]:
+    """判断是否为等间距线性网格，并返回步长。
+
+    Parameters
+    ----------
+    r : numpy.ndarray
+        径向网格。
+    tol : float
+        判断等间距的容差。
+
+    Returns
+    -------
+    is_uniform : bool
+        是否等间距。
+    h : float
+        网格步长（若非等间距则返回 0）。
+    """
+    dr = np.diff(r)
+    if np.allclose(dr, dr[0], atol=tol, rtol=0):
+        return True, float(dr[0])
+    return False, 0.0
+
+
+def radial_hamiltonian_matrix_linear_fd5(
+    r: np.ndarray,
+    l: int,
+    v_of_r: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    r"""构造等间距线性网格上的五点格式二阶导数 Hamiltonian（内部点为 i=2..N-3）。
+
+    二阶导数五点格式：
+
+    .. math::
+        f''(x_i) \approx \frac{-f_{i-2} + 16 f_{i-1} - 30 f_i + 16 f_{i+1} - f_{i+2}}{12 h^2}.
+
+    我们采用等价系数形式：(-1, 16, -30, 16, -1)/(12 h^2)。
+
+    Dirichlet 边界：u(r_0)=u(r_1)=u(r_{N-2})=u(r_{N-1})=0，内部未知为 i=2..N-3，总共 N-4 个未知。
+    """
+    ok, h = _is_uniform_linear_grid(r)
+    if not ok:
+        raise ValueError("radial_hamiltonian_matrix_linear_fd5 仅支持等间距线性网格")
+    if r.size < 6:
+        raise ValueError("FD5 至少需要 6 个网格点")
+    n = r.size
+    # 内部索引范围
+    idx0 = 2
+    idx1 = n - 3
+    m = idx1 - idx0 + 1  # 内部未知数个数
+    r_inner = r[idx0:idx1 + 1]
+
+    # 构造五对角二阶导数矩阵 D2（形状 m×m）
+    D2 = np.zeros((m, m), dtype=float)
+    coef = np.array([-1.0, 16.0, -30.0, 16.0, -1.0]) / (12.0 * h * h)
+    # 对角
+    np.fill_diagonal(D2, coef[2])
+    # 一阶偏移（i±1）
+    for i in range(m - 1):
+        D2[i, i + 1] = coef[3]
+        D2[i + 1, i] = coef[1]
+    # 二阶偏移（i±2）
+    for i in range(m - 2):
+        D2[i, i + 2] = coef[4]
+        D2[i + 2, i] = coef[0]
+
+    T = -0.5 * D2
+    v_inner = v_of_r[idx0:idx1 + 1]
+    lterm = 0.5 * l * (l + 1) / (r_inner ** 2)
+    V = np.diag(v_inner + lterm)
+    H = T + V
+    return H, r_inner
+
+
+def solve_bound_states_fd5(
+    r: np.ndarray,
+    l: int,
+    v_of_r: np.ndarray,
+    k: int = 4,
+) -> tuple[np.ndarray, np.ndarray]:
+    r"""等间距线性网格上的五点格式 Hamiltonian 低端本征求解（k 个）。
+
+    内部点为 i=2..N-3，边界补零后归一化 `∫ u^2 dr = 1`。
+    """
+    H, r_inner = radial_hamiltonian_matrix_linear_fd5(r, l, v_of_r)
+    e_all, U_inner = np.linalg.eigh(H)
+    idx = np.argsort(e_all)
+    e_sorted = e_all[idx]
+    U_inner = U_inner[:, idx]
+    k = min(k, e_sorted.size)
+    eps = e_sorted[:k]
+    U_out = np.zeros((k, r.size), dtype=float)
+    w = trapezoid_weights(r)
+    for j in range(k):
+        u = np.zeros_like(r)
+        u[2:-2] = U_inner[:, j]
+        u, _ = normalize_radial_u(u, r, w)
+        U_out[j] = u
+    return eps, U_out
+
+
+def solve_bound_states_fd5_auxlinear(
+    r: np.ndarray,
+    l: int,
+    v_of_r: np.ndarray,
+    k: int = 4,
+    n_aux: int | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    r"""在非等间距网格上，使用辅助等间距线性网格（FD5）求解本征，再插值回原网格。
+
+    步骤：
+    1) 构造线性等间距网格 :math:`r_{\text{lin}} \in [r_0, r_{N-1}]`，点数 :math:`n_{\text{aux}}`（默认与原网格同级别或更密）。
+    2) 将势 :math:`v(r)` 插值到线性网格上；
+    3) 用五点格式 `solve_bound_states_fd5` 在线性网格上求低端本征；
+    4) 将解插值回原网格，并在原网格上归一化（`∫ u^2 dr = 1`）。
+    """
+    if n_aux is None:
+        n_aux = max(len(r), 1600)
+    rmin, rmax = float(r[0]), float(r[-1])
+    r_lin = np.linspace(rmin, rmax, n_aux)
+    v_lin = np.interp(r_lin, r, v_of_r)
+    eps, U_lin = solve_bound_states_fd5(r_lin, l=l, v_of_r=v_lin, k=k)
+
+    U_out = np.zeros((len(eps), r.size), dtype=float)
+    w = trapezoid_weights(r)
+    for j in range(len(eps)):
+        u_lin = U_lin[j]
+        u = np.interp(r, r_lin, u_lin)
+        u, _ = normalize_radial_u(u, r, w)
+        U_out[j] = u
+    return eps, U_out

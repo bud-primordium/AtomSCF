@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from .constants import VWN5_RPA_PARAMS
 
 __all__ = [
     "lda_c_vwn",
@@ -8,41 +9,49 @@ __all__ = [
 
 
 def _vwn_params(polarized: bool):
-    """VWN5 参数（常见取值），用于 :math:`\varepsilon_c(r_s)` 计算。
+    """VWN5/RPA 参数（集中于 constants.VWN5_RPA_PARAMS）。"""
+    key = "polarized" if polarized else "unpolarized"
+    return VWN5_RPA_PARAMS[key]
 
-    参考常用实现的参数集合（RPA 版本，VWN5），用于教学对比。
-    注意：不同资料存在细微差异，后续将据文献校正。
+
+def _vwn_eps_and_depsdrs(rs: np.ndarray, polarized: bool) -> tuple[np.ndarray, np.ndarray]:
+    r"""VWN5 关联能及其对 :math:`r_s` 的解析导数。
+
+    采用 :math:`x=\sqrt{r_s}` 变量，写出 :math:`\varepsilon_c(x)` 及 :math:`\partial \varepsilon_c/\partial x` 的闭式表达，
+    再由 :math:`\partial x/\partial r_s = 1/(2\sqrt{r_s})` 得到 :math:`\partial \varepsilon_c/\partial r_s`。
     """
-    if not polarized:
-        # 非极化
-        A = 0.0310907
-        x0 = -0.10498
-        b = 3.72744
-        c = 12.9352
-    else:
-        # 全极化
-        A = 0.01554535
-        x0 = -0.32500
-        b = 7.06042
-        c = 18.0578
-    return A, x0, b, c
-
-
-def _vwn_eps(rs: np.ndarray, polarized: bool) -> np.ndarray:
-    r"""VWN 每电子关联能 :math:`\varepsilon_c(r_s)`（使用 :math:`x=\sqrt{r_s}` 的常见表达）。"""
     A, x0, b, c = _vwn_params(polarized)
     rs = np.asarray(rs, dtype=float)
     x = np.sqrt(np.maximum(rs, 1e-30))
-    Q = np.sqrt(4.0 * c - b * b)
+    Q = np.sqrt(max(4.0 * c - b * b, 1e-30))
 
-    def g(xx: np.ndarray) -> np.ndarray:
-        return np.log((xx * xx) / (xx * xx + b * xx + c)) + (2.0 * b / Q) * np.arctan((2.0 * xx + b) / Q)
+    def X(xx: np.ndarray) -> np.ndarray:
+        return xx * xx + b * xx + c
 
-    term0 = g(x)
-    denom0 = x0 * x0 + b * x0 + c
-    # 避免 x0 奇点的数值问题（理论上固定常数，数值无问题）
-    term1 = (x0 * b / denom0) * (np.log(((x - x0) * (x - x0)) / denom0) + (2.0 * (b + 2.0 * x0) / Q) * np.arctan((2.0 * x + b) / Q))
-    return A * (term0 - term1)
+    # epsilon_c(x)
+    term_log = np.log((x * x) / X(x))
+    term_atan = (2.0 * b / Q) * np.arctan(Q / (2.0 * x + b))
+    denom0 = X(x0)
+    # 常数项：避免除零
+    denom0 = denom0 if np.isscalar(denom0) else np.where(np.abs(denom0) < 1e-30, 1e-30, denom0)
+    const_pref = (b * x0) / denom0
+    term_log2 = np.log(((x - x0) * (x - x0)) / X(x))
+    term_atan2 = (2.0 * (b + 2.0 * x0) / Q) * np.arctan(Q / (2.0 * x + b))
+    eps = A * (term_log + term_atan - const_pref * (term_log2 + term_atan2))
+
+    # d eps / dx（解析导数）
+    # d/dx ln(x^2 / X) = 2/x - (2x+b)/X
+    d_log = 2.0 / np.maximum(x, 1e-30) - (2.0 * x + b) / np.maximum(X(x), 1e-30)
+    # d/dx [ 2b/Q arctan(Q/(2x+b)) ] = -4b / ( (2x+b)^2 + Q^2 )
+    denom_sq = (2.0 * x + b) ** 2 + Q * Q
+    d_atan = -4.0 * b / np.maximum(denom_sq, 1e-30)
+    # d/dx ln( (x-x0)^2 / X ) = 2/(x-x0) - (2x+b)/X
+    d_log2 = 2.0 / np.maximum(x - x0, 1e-30) - (2.0 * x + b) / np.maximum(X(x), 1e-30)
+    # d/dx [ 2(b+2x0)/Q arctan(Q/(2x+b)) ] = -4(b+2x0) / ( (2x+b)^2 + Q^2 )
+    d_atan2 = -4.0 * (b + 2.0 * x0) / np.maximum(denom_sq, 1e-30)
+    deps_dx = A * (d_log + d_atan - const_pref * (d_log2 + d_atan2))
+    deps_drs = deps_dx / (2.0 * np.maximum(x, 1e-30))
+    return eps, deps_drs
 
 
 def _num_grad_y_x(y: np.ndarray, x: np.ndarray) -> np.ndarray:
@@ -90,12 +99,8 @@ def lda_c_vwn(n_up: np.ndarray, n_dn: np.ndarray) -> tuple[np.ndarray, np.ndarra
     rs = (3.0 / (4.0 * np.pi * n_safe)) ** (1.0 / 3.0)
     zeta = np.clip((up - dn) / n_safe, -1.0, 1.0)
 
-    eps0 = _vwn_eps(rs, polarized=False)
-    eps1 = _vwn_eps(rs, polarized=True)
-
-    # 数值求 d eps / d rs
-    deps0_drs = _num_grad_y_x(eps0, rs)
-    deps1_drs = _num_grad_y_x(eps1, rs)
+    eps0, deps0_drs = _vwn_eps_and_depsdrs(rs, polarized=False)
+    eps1, deps1_drs = _vwn_eps_and_depsdrs(rs, polarized=True)
 
     two43 = 2.0 ** (4.0 / 3.0)
     denom = two43 - 2.0
