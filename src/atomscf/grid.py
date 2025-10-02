@@ -4,6 +4,7 @@ __all__ = [
     "radial_grid_linear",
     "radial_grid_log",
     "trapezoid_weights",
+    "radial_grid_mixed",
 ]
 
 
@@ -129,3 +130,55 @@ def radial_grid_log(n: int, rmin: float, rmax: float) -> tuple[np.ndarray, np.nd
     w = trapezoid_weights(r)
     return r, w
 
+
+def radial_grid_mixed(
+    n_inner: int,
+    n_outer: int,
+    rmin: float,
+    r_switch: float,
+    rmax: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    r"""生成混合径向网格：核附近为对数网格，外层为线性网格。
+
+    混合网格旨在在小 :math:`r` 处加密，同时控制总点数与外层行为：
+
+    - 内层（对数）：:math:`r_i = r_{\min} e^{i\Delta},\ i=0..n_{\text{inner}}-1`，末点尽量接近 :math:`r_{\text{switch}}`；
+    - 外层（线性）：从 :math:`r_{\text{switch}}` 到 :math:`r_{\max}` 等间距 :math:`n_{\text{outer}}` 个点（含端点）。
+
+    Parameters
+    ----------
+    n_inner : int
+        内层对数段点数（>=2）。
+    n_outer : int
+        外层线性段点数（>=2）。
+    rmin : float
+        最小半径（>0）。
+    r_switch : float
+        切换半径（满足 rmin < r_switch < rmax）。
+    rmax : float
+        最大半径（> r_switch）。
+
+    Returns
+    -------
+    r : numpy.ndarray
+        合并后的单调递增网格，重复点已去重。
+    w : numpy.ndarray
+        对应梯形积分权重。
+    """
+    if not (n_inner >= 2 and n_outer >= 2):
+        raise ValueError("n_inner 与 n_outer 均需 >= 2")
+    if not (rmin > 0 and rmax > rmin and r_switch > rmin and r_switch < rmax):
+        raise ValueError("半径需满足 0<rmin<r_switch<rmax")
+
+    # 内层对数：从 rmin 到 r_switch
+    r_log, _ = radial_grid_log(n_inner, rmin, r_switch)
+    # 外层线性：从 r_switch 到 rmax
+    r_lin, _ = radial_grid_linear(n_outer, r_switch, rmax)
+
+    # 合并并去重（避免 r_switch 重复）
+    r = np.concatenate([r_log, r_lin])
+    # 去重并保证严格单调
+    r = np.unique(r)
+    # 权重
+    w = trapezoid_weights(r)
+    return r, w
