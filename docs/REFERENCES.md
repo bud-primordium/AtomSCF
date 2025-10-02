@@ -10,9 +10,10 @@
   - https://siesta-project.org/SIESTA_MATERIAL/Pseudos/Code/downloads.html
 - 交换—关联函数：
   - Dirac 交换（LSDA 自旋缩放）—标准教材表达式
-  - Perdew–Zunger 1981：J. P. Perdew and A. Zunger, Phys. Rev. B 23, 5048 (1981). （Ceperley–Alder 拟合）
+  - Perdew–Zunger 1981：J. P. Perdew and A. Zunger, Phys. Rev. B 23, 5048 (1981).（Ceperley–Alder 拟合）
+  - Vosko–Wilk–Nusair 1980：S. H. Vosko, L. Wilk, and M. Nusair, Canadian Journal of Physics 58, 1200 (1980).（VWN5/RPA 常用参数）
+  - Libxc 项目（对照参考实现）：https://www.tddft.org/programs/libxc/
 - 目标核对（后续对齐）：NIST 原子参考能级数据
   - https://www.nist.gov/pml/atomic-reference-data-electronic-structure-calculations/atomic-reference-data-electronic-7-5
 
 > 注：本项目严格独立实现；上述链接仅用于物理与数值方法的参考、参数取值与结果核对，未复制其源码。
-
