@@ -36,6 +36,7 @@ from .angular import (
     get_coupling_factor,
     wigner_3j_squared,
 )
+from .exchange import exchange_operator_general, exchange_operator_s
 from .slater import (
     SlaterIntegralCache,
     slater_integral_k0,
@@ -52,4 +53,7 @@ __all__ = [
     "wigner_3j_squared",
     "coupling_factor_ak",
     "get_coupling_factor",
+    # 交换算子
+    "exchange_operator_s",
+    "exchange_operator_general",
 ]
