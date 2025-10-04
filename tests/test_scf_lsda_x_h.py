@@ -1,8 +1,12 @@
 import numpy as np
+import pytest
 
 from atomscf.grid import radial_grid_linear
 from atomscf.scf import SCFConfig, run_lsda_x_only
 
+
+@pytest.mark.scf
+@pytest.mark.quick
 
 def test_lsda_x_only_hydrogen_electron_count_and_convergence():
     # 对数网格：小 r 加密，适合库仑势

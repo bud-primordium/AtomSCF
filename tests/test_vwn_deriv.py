@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from atomscf.xc.vwn import lda_c_vwn
 
@@ -15,6 +16,8 @@ def finite_diff_eps(rs: np.ndarray, up: float, dn: float, delta: float = 1e-3):
     eps2, _, _, _ = lda_c_vwn(up * n2, dn * n2)
     return eps, eps2
 
+
+@pytest.mark.xc
 
 def test_vwn_eps_no_nan_and_reasonable_change():
     rs_vals = np.array([0.1, 0.5, 1.0, 2.0, 5.0])

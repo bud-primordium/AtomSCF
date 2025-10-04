@@ -1,8 +1,11 @@
 import numpy as np
+import pytest
 
 from atomscf.grid import radial_grid_linear
 from atomscf.scf import SCFConfig, run_lsda_x_only
 
+
+@pytest.mark.scf
 
 def test_lsda_x_only_carbon_ordering_and_electron_count():
     r, w = radial_grid_linear(n=1000, rmin=1e-6, rmax=60.0)

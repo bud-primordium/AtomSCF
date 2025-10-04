@@ -1,8 +1,12 @@
 import numpy as np
+import pytest
 
 from atomscf.grid import radial_grid_linear
 from atomscf.operator import solve_bound_states_fd
 
+
+@pytest.mark.operator
+@pytest.mark.quick
 
 def test_hydrogen_1s_energy_close_to_half_ha():
     # 线性网格（教学用），较大 rmax 降低边界影响

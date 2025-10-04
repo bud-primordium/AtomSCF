@@ -1,8 +1,11 @@
 import numpy as np
+import pytest
 
 from atomscf.grid import radial_grid_linear
 from atomscf.scf import SCFConfig, run_lsda_pz81
 
+
+@pytest.mark.scf
 
 def test_lsda_pz81_hydrogen_energy_components_and_homo():
     r, w = radial_grid_linear(n=1000, rmin=1e-6, rmax=60.0)
@@ -23,6 +26,8 @@ def test_lsda_pz81_hydrogen_energy_components_and_homo():
     for k in ["E_total", "E_H", "E_x", "E_c", "E_ext", "E_sum"]:
         assert k in E and np.isfinite(E[k])
 
+
+@pytest.mark.scf
 
 def test_lsda_pz81_carbon_quick():
     r, w = radial_grid_linear(n=1000, rmin=1e-6, rmax=70.0)

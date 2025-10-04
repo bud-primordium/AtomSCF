@@ -1,8 +1,11 @@
 import numpy as np
+import pytest
 
 from atomscf.grid import radial_grid_linear
 from atomscf.scf_hf import HFConfig, run_hf_minimal
 
+
+@pytest.mark.scf
 
 def test_hf_minimal_hydrogen_1s():
     r, w = radial_grid_linear(1200, 1e-6, 80.0)
