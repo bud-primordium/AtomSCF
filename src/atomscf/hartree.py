@@ -10,7 +10,7 @@ __all__ = ["v_hartree"]
 def v_hartree(n: np.ndarray, r: np.ndarray, w: np.ndarray | None = None) -> np.ndarray:
     r"""由总电子数密度 :math:`n(r)` 计算径向 Hartree 势 :math:`v_H(r)`。
 
-    采用数值稳定的分段积分公式（原子单位）：
+    采用与 Slater 积分一致的权重累积算法（原子单位）：
 
     .. math::
         v_H(r) = \frac{4\pi}{r}\int_0^r n(r')r'^2\,dr' + 4\pi \int_r^{\infty} n(r')r'\,dr'.
@@ -36,26 +36,33 @@ def v_hartree(n: np.ndarray, r: np.ndarray, w: np.ndarray | None = None) -> np.n
     -----
     - 在极小 :math:`r` 处对 :math:`1/r` 做安全下界裁剪。
     - 对于单电子体系（如氢原子），严格 HF 下 Hartree 与交换应相消；在 LSDA 中仅近似抵消。
+    - **重要**: 本版本使用与 Slater 积分相同的累积算法，确保单电子一致性。
     """
     if n.shape != r.shape:
         raise ValueError("n 与 r 的形状必须一致")
     if np.any(np.diff(r) <= 0):
         raise ValueError("r 必须严格单调递增")
-    # 采用分段梯形法逐段累积，避免直接使用全局权重导致的端点半权误差扩散
+
+    # 自动计算权重（如未提供）
+    if w is None:
+        w = trapezoid_weights(r)
+
+    # 安全半径（避免除零）
     r_safe = np.maximum(r, 1e-12)
-    f1 = n * (r ** 2)  # 被积函数：n(r) r^2
-    f2 = n * r  # 被积函数：n(r) r
+    eps = 1e-30  # 与 Slater 一致的安全常数
 
-    dr = np.diff(r)
-    # 前缀积分 I1[i] = ∫_0^{r_i} f1 dr
-    inc1 = 0.5 * (f1[:-1] + f1[1:]) * dr
-    I1 = np.zeros_like(r)
-    I1[1:] = np.cumsum(inc1)
+    # 被积函数（与 Slater k=0 公式对应）
+    # Y: ∫_0^r n(r') r'^2 dr'（对应 r^k 项，k=0 时简化）
+    # Z: ∫_r^∞ n(r') r' dr'（对应 r'^(-k-1) 项，k=0 时为 r'^(-1)）
 
-    # 后缀积分 I2[i] = ∫_{r_i}^{r_max} f2 dr
-    inc2 = 0.5 * (f2[:-1] + f2[1:]) * dr
-    I2 = np.zeros_like(r)
-    I2[:-1] = np.cumsum(inc2[::-1])[::-1]
+    # 向前累积：Y = ∫_0^r n r^2 dr
+    integrand_Y = n * (r**2) * w
+    Y = np.cumsum(integrand_Y)
 
-    vH = 4.0 * np.pi * (I1 / r_safe + I2)
+    # 向后累积：Z = ∫_r^∞ n r dr
+    integrand_Z = n * r * w
+    Z = np.cumsum(integrand_Z[::-1])[::-1]
+
+    # 组合：v_H = 4π (Y/r + Z)
+    vH = 4.0 * np.pi * (Y / (r_safe + eps) + Z)
     return vH
