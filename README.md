@@ -145,7 +145,7 @@ $$
 **关键特性**：
 - 消除一阶导数项 → 对称 Hamiltonian 矩阵 → `eigh()` 求解
 - 精度提升约 7 倍，速度提升约 3 倍
-- 包含 $r=0$ 点（$j=0 \Rightarrow r=r_{\min}=0$）
+- 包含 $r=0$ 点（当 $j=0$ 时 $r=r_{\min}=0$）
 
 **上游实现**：[Computational Physics Assignment 7-2](https://github.com/bud-primordium/Computational-Physics-Fall-2024/tree/main/Assignment_7/Problem_2)
 
