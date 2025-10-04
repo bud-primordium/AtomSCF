@@ -1,124 +1,12 @@
 # AtomSCF 文档
 
-本目录包含 AtomSCF 项目的 Sphinx 文档源文件。
+本目录包含 AtomSCF 项目的 Sphinx 文档源文件，面向**文档开发者和贡献者**。
 
-## 重要说明
-
-**AtomSCF 是一个专门用于球对称体系的径向量子化学计算工具**，请在使用前了解以下限制与特性。
-
-### 适用范围
-
-- **单原子体系**：H, He, Li, C, N, O 等独立原子
-- **球对称问题**：具有中心对称势场的体系
-- **不支持分子**：不适用于多中心问题（如 H₂, H₂O 等）
-- **不支持固体**：不适用于周期性边界条件
-
-### 核心方法特点
-
-#### 1. 径向一维离散化
-
-将三维 Schrödinger 方程约化为径向方程：
-
-$$
-\left[-\frac{1}{2}\frac{d^2}{dr^2} + \frac{\ell(\ell+1)}{2r^2} + V_{\text{eff}}(r)\right] u_{n\ell}(r) = \varepsilon_{n\ell} u_{n\ell}(r)
-$$
-
-其中：
-
-- 径向波函数 $u_{n\ell}(r) = r \cdot R_{n\ell}(r)$ 满足边界条件 $u(0) = u(\infty) = 0$
-- 角动量 $\ell$ 作为量子数，球谐函数 $Y_\ell^m$ 已知
-- 仅沿半径方向进行数值离散
-
-#### 2. 实空间方法（非基组展开）
-
-本项目采用**实空间有限差分方法**，区别于传统量子化学软件的 Gaussian 基组或平面波展开。
-
-**标准有限差分**：
-
-- **FD2**：二阶中心差分，支持非均匀网格
-- **FD5**：五阶中心差分，需等间距网格，精度 $O(h^4)$
-
-**变量变换方法**（核心创新）：
-
-基于指数网格的变量变换技术，源自 [Computational Physics Fall 2024, Assignment 7, Problem 2](https://github.com/bud-primordium/Computational-Physics-Fall-2024/tree/main/Assignment_7/Problem_2)。
-
-**网格定义**：
-
-$$
-r(j) = R_p (\exp(j\delta) - 1) + r_{\min}, \quad j = 0, 1, \dots, N-1
-$$
-
-**变量代换**：
-
-$$
-u(j) = v(j) \cdot \exp\left(\frac{j\delta}{2}\right)
-$$
-
-**变换后的离散方程**（在索引空间 $j$ 中）：
-
-$$
-v''(j) - \frac{\delta^2}{4}v(j) = 2R_p^2\delta^2 \exp(2j\delta) \left[\varepsilon - V_{\text{eff}}(r(j))\right] v(j)
-$$
-
-变换的核心目的是**消除一阶导数项**，使得离散后的 Hamiltonian 矩阵对称，可用高效的 `eigh()` 求解广义特征值问题。
-
-**关键优势**：
-
-- 精度提升约 7 倍（相比线性网格）
-- 速度提升约 3 倍（网格点数减少）
-- 自然包含原点 $r_0 = 0$（物理正确）
-- 对称矩阵 + 广义特征值问题数值稳定
-
-**参数选择**：
-
-- $\delta \approx 0.01 \sim 0.05$（控制网格疏密）
-- $R_p \approx Z/4$（$Z$ 为原子序数，优化波函数衰减匹配）
-
-#### 3. 交换-关联处理
-
-**Hartree-Fock**：
-
-- 精确交换通过 Slater 径向积分 $R^k(r) = Y^k(r) + Z^k(r)$
-- 角动量耦合通过 Wigner 3-j 符号计算
-- 支持 RHF（限制性，闭壳层）和 UHF（非限制性，开壳层）
-
-**DFT-LSDA**：
-
-- Dirac 交换：$\varepsilon_x = -\frac{3}{4}\left(\frac{3\rho}{\pi}\right)^{1/3}$
-- 关联泛函：PZ81（Perdew-Zunger 1981）或 VWN（Vosko-Wilk-Nusair）
+用户文档请访问：[https://bud-primordium.github.io/AtomSCF/](https://bud-primordium.github.io/AtomSCF/)
 
 ---
 
-## 项目源码结构
-
-```
-src/atomscf/
-├── grid.py          # 径向网格生成（线性/对数/指数变换/混合）
-├── operator.py      # 径向 Schrödinger 方程求解器（FD2/FD5/变换/Numerov）
-├── scf.py          # DFT 自洽场框架（LSDA-PZ81/VWN）
-├── scf_hf.py       # HF 自洽场框架（RHF/UHF，s/p/d 轨道）
-├── hartree.py      # Hartree 势计算（泊松方程求解）
-├── occupations.py  # 原子电子占据方案（Z=1-18，Hund 规则）
-├── numerov.py      # Numerov 方法（对数网格边界值问题）
-├── utils.py        # 积分、归一化、梯形权重等工具
-├── io.py          # CSV/JSON 数据导出
-├── hf/
-│   ├── slater.py   # Slater 径向积分（Y^k/Z^k 两段累积）
-│   ├── angular.py  # Wigner 3-j 符号、角动量耦合因子
-│   └── exchange.py # HF 交换算符（s 轨道、通用多 l 通道）
-└── xc/
-    ├── lda.py      # Dirac 交换 + PZ81 关联
-    ├── vwn.py      # VWN 关联泛函
-    └── constants.py
-```
-
-**核心工作流**：
-
-1. `grid.py` 生成网格 → 2. `operator.py` 构造 Hamiltonian 矩阵 → 3. `scf.py` 或 `scf_hf.py` 自洽迭代 → 4. `io.py` 导出结果
-
----
-
-## 文档构建
+## 快速构建
 
 ### 安装依赖
 
@@ -130,24 +18,14 @@ pip install -e .[docs]
 
 ```bash
 cd docs
-make html
+make html       # 构建 HTML
+make serve      # 启动本地服务器（http://localhost:8000）
+make clean      # 清理构建产物
 ```
 
-生成的 HTML 文档位于 `docs/build/index.html`。
+### 自动部署
 
-### 本地预览
-
-```bash
-make serve
-```
-
-访问 http://localhost:8000
-
-### 在线阅读
-
-项目文档已部署到 GitHub Pages，推送到 `main` 分支后自动构建：
-
-- 文档地址：`https://bud-primordium.github.io/AtomSCF/`（待部署后更新）
+推送到 `main` 分支后，GitHub Actions 自动构建并部署到 GitHub Pages。
 
 ---
 
@@ -156,28 +34,185 @@ make serve
 ```
 docs/
 ├── source/
+│   ├── conf.py                # Sphinx 配置
 │   ├── index.rst              # 文档主页
 │   ├── introduction.rst       # 项目介绍
-│   ├── algorithm/             # 算法原理（HF/DFT/数值方法推导）
+│   ├── algorithm/             # 算法原理推导
+│   │   ├── index.rst
+│   │   ├── hartree_fock.rst       # HF 方法（Slater 行列式、Fock 算符）
+│   │   ├── density_functional.rst # DFT 方法（KS 方程、泛函）
+│   │   └── numerical_methods.rst  # 数值方法（网格、FD、变量变换）
 │   ├── api/                   # API 自动生成文档
 │   │   ├── index.rst
-│   │   └── generated/         # autosummary 生成的模块文档
-│   ├── examples/              # 使用教程（H/He/Li/C 等原子示例）
-│   └── conf.py                # Sphinx 配置
+│   │   └── generated/         # autosummary 生成的模块文档（git 忽略）
+│   ├── examples/              # 使用教程
+│   │   ├── index.rst
+│   │   ├── basic_usage.rst    # 基础教程（H/He/Li）
+│   │   └── atoms.rst          # 各种原子示例（H-Ne）
+│   └── _static/               # 静态资源（主题、CSS）
 ├── build/                     # 构建输出（git 忽略）
 └── Makefile                   # 构建脚本
 ```
 
 ---
 
-## 文档状态
+## Sphinx 配置要点
 
-**当前进度**：
+**`conf.py` 关键配置**：
 
-- 算法原理推导（HF、DFT、数值方法）已完成
-- 基础使用教程（H/He/Li/C 原子示例）已完成
-- API 自动生成文档已完成
-- 高级主题（收敛技巧、网格优化）待补充
-- 基准测试与文献对比待完善
+- **中文支持**：`language = 'zh_CN'`
+- **扩展**：`autodoc`, `autosummary`, `napoleon`, `mathjax`, `myst_parser`
+- **主题**：`sphinx_rtd_theme`（ReadTheDocs 风格）
+- **自动生成**：`autosummary_generate = True`
 
-文档持续改进中，如遇问题欢迎提交 Issue 或 Pull Request。
+**数学公式**：
+
+- 块公式：`.. math::`
+- 行内公式：`:math:\`...\``
+- LaTeX 语法，双反斜杠转义（如 `\\frac`）
+
+**API 文档**：
+
+- `api/index.rst` 使用 `.. autosummary::` 自动生成模块文档
+- 生成的文件位于 `api/generated/`（git 忽略）
+- docstring 使用 NumPy 风格
+
+---
+
+## 文档编写规范
+
+### reStructuredText 语法
+
+**标题层级**：
+
+```rst
+一级标题
+========
+
+二级标题
+--------
+
+三级标题
+~~~~~~~~
+```
+
+**代码块**：
+
+```rst
+.. code-block:: python
+
+   from atomscf import run_hf_minimal
+   result = run_hf_minimal(Z=1, r=r, w=w)
+```
+
+**数学公式**：
+
+```rst
+.. math::
+
+   E = -\frac{Z^2}{2n^2}
+```
+
+**交叉引用**：
+
+```rst
+:ref:`算法原理 <algorithm-index>`
+:func:`atomscf.scf_hf.run_hf_minimal`
+:class:`atomscf.scf.SCFConfig`
+```
+
+### Docstring 规范
+
+**NumPy 风格**：
+
+```python
+def function_name(param1: type1, param2: type2) -> return_type:
+    r"""简短描述（一行）。
+
+    详细描述（可选，多行）。
+
+    Parameters
+    ----------
+    param1 : type1
+        参数 1 的说明
+    param2 : type2
+        参数 2 的说明
+
+    Returns
+    -------
+    return_type
+        返回值说明
+
+    Notes
+    -----
+    数学公式使用 LaTeX（注意原始字符串 r"""）：
+
+    .. math::
+
+        E = \sum_i n_i \epsilon_i
+
+    Examples
+    --------
+    >>> result = function_name(1.0, 2.0)
+    >>> print(result)
+    3.0
+    """
+```
+
+**关键点**：
+
+- 使用 `r"""` 原始字符串（避免 Python 转义反斜杠）
+- LaTeX 使用双反斜杠（`\\frac`, `\\sum`）
+- 参数类型用 `:` 分隔（不是 Python 类型注解）
+
+---
+
+## 常见问题
+
+### 构建警告过多
+
+当前约 234 个警告，主要是：
+
+- 重复对象描述（`duplicate object description`）
+- 内联公式语法（`Inline interpreted text`）
+- 引用未定义（`Unknown target name`）
+
+**解决方向**：
+
+- 减少 `autosummary` 和手动 `autoclass` 的重复
+- 修正 docstring 中的 LaTeX 语法
+- 统一引用标签（如 `[ExpGridTransform]`）
+
+### 数学公式不显示
+
+**原因**：Python 解释反斜杠
+
+**解决**：docstring 使用 `r"""` 开头
+
+### API 文档为空
+
+**原因**：`autosummary_generate = True` 未生效或模块导入失败
+
+**解决**：
+
+1. 确保 `pip install -e .` 已安装包
+2. 检查 `sys.path.insert(0, os.path.abspath("../../src"))`
+3. 清理 `build/` 和 `api/generated/` 后重新构建
+
+---
+
+## 贡献指南
+
+1. **修改源文件**：编辑 `source/*.rst` 文件
+2. **本地验证**：`make html && make serve` 检查渲染效果
+3. **提交前检查**：确保无新增 ERROR（WARNING 可接受）
+4. **提交规范**：`docs: <具体修改>`（英文，Conventional Commits）
+
+---
+
+## 技术资源
+
+- **Sphinx 官方文档**：https://www.sphinx-doc.org/
+- **reStructuredText 参考**：https://docutils.sourceforge.io/rst.html
+- **NumPy docstring 规范**：https://numpydoc.readthedocs.io/
+- **ReadTheDocs 主题**：https://sphinx-rtd-theme.readthedocs.io/
