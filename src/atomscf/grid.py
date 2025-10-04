@@ -3,6 +3,7 @@ import numpy as np
 __all__ = [
     "radial_grid_linear",
     "radial_grid_log",
+    "radial_grid_exp_transformed",
     "trapezoid_weights",
     "radial_grid_mixed",
 ]
@@ -93,7 +94,7 @@ def radial_grid_linear(n: int, rmin: float, rmax: float) -> tuple[np.ndarray, np
 def radial_grid_log(n: int, rmin: float, rmax: float) -> tuple[np.ndarray, np.ndarray]:
     r"""生成对数（几何）径向网格及其梯形积分权重。
 
-    对数网格的定义：
+    对数网格的定义（对数等差，适用于 Numerov）：
 
     .. math::
         r_i = r_\min\,\exp\!\left( i\,\Delta x \right),\ \ \Delta x = \frac{\ln(r_\max) - \ln(r_\min)}{N-1}.
@@ -117,6 +118,7 @@ def radial_grid_log(n: int, rmin: float, rmax: float) -> tuple[np.ndarray, np.nd
     Notes
     -----
     - 对数网格能在小 :math:`r` 处加密采样，适合处理库仑势与核附近行为。
+    - 该网格满足 ln(r) 等差，适用于 Numerov 方法（参考 codex reply_check_4.md）
     - 若后续采用有限差分离散二阶导数，需使用非均匀网格的差分公式（本包已支持）。
     """
     if n < 2:
@@ -129,6 +131,86 @@ def radial_grid_log(n: int, rmin: float, rmax: float) -> tuple[np.ndarray, np.nd
     r = np.exp(x)
     w = trapezoid_weights(r)
     return r, w
+
+
+def radial_grid_exp_transformed(
+    n: int,
+    rmin: float,
+    rmax: float,
+    total_span: float = 6.0
+) -> tuple[np.ndarray, np.ndarray, float, float]:
+    r"""生成用于变量变换方法的指数网格。
+
+    网格公式参考文献 [1]_：
+
+    .. math::
+        r(j) = R_p(\exp(j\delta) - 1) + r_{\min}, \quad j=0,1,\ldots,j_{\max}
+
+    其中 :math:`R_p` 由边界条件 :math:`r(j_{\max}) = r_{\max}` 确定，
+    :math:`\delta` 由 :math:`j_{\max} \cdot \delta = \text{total\_span}` 确定（默认6.0）。
+
+    该网格配合变量变换 :math:`v(j) = u(j) / \exp(j\delta/2)` 使用，
+    可以消除坐标变换引入的一阶导数项。
+
+    Parameters
+    ----------
+    n : int
+        网格点数 :math:`j_{\max} + 1`，要求 :math:`n \ge 2`。
+    rmin : float
+        径向下限 :math:`r_{\min} \ge 0`（可以为0，物理上核在原点）。
+    rmax : float
+        径向上限 :math:`r_{\max}`，应满足 :math:`r_{\max} > r_{\min}`。
+    total_span : float, optional
+        控制参数 :math:`j_{\max} \cdot \delta`，默认6.0。
+
+    Returns
+    -------
+    r : numpy.ndarray
+        径向网格坐标，满足 r[0] = rmin, r[-1] = rmax。
+    w : numpy.ndarray
+        对应的梯形积分权重。
+    delta : float
+        网格参数 :math:`\delta`。
+    Rp : float
+        网格参数 :math:`R_p`。
+
+    Notes
+    -----
+    - 该网格确保 r[0] = rmin（可以为0，物理上正确）
+    - 需配合 operator.py 中的 solve_bound_states_transformed 使用
+    - 变量变换后的方程没有一阶导数项，数值稳定性好
+
+    References
+    ----------
+    .. [ExpGridTransform] 指数网格变量变换方法
+       来源：Computational Physics Fall 2024, Assignment 7, Problem 2
+       https://github.com/bud-primordium/Computational-Physics-Fall-2024/tree/main/Assignment_7/Problem_2
+       problem_2.tex 第32-46行
+    """
+    if n < 2:
+        raise ValueError("n 必须 >= 2")
+    if rmin < 0:
+        raise ValueError("rmin 必须 >= 0")
+    if rmax <= rmin:
+        raise ValueError("要求 rmax > rmin")
+
+    j_max = n - 1
+    delta = total_span / j_max
+
+    # 从边界条件反推 Rp
+    # r_max = Rp * (exp(j_max * delta) - 1) + rmin
+    Rp = (rmax - rmin) / (np.exp(j_max * delta) - 1.0)
+
+    # 生成网格
+    j = np.arange(n)
+    r = Rp * (np.exp(j * delta) - 1.0) + rmin
+
+    # 验证边界条件
+    assert np.abs(r[0] - rmin) < 1e-12, f"r[0] 应为 {rmin}，实际为 {r[0]}"
+    assert np.abs(r[-1] - rmax) < 1e-10 * rmax, f"r[-1] 应为 {rmax}，实际为 {r[-1]}"
+
+    w = trapezoid_weights(r)
+    return r, w, delta, Rp
 
 
 def radial_grid_mixed(
@@ -176,9 +258,11 @@ def radial_grid_mixed(
     r_lin, _ = radial_grid_linear(n_outer, r_switch, rmax)
 
     # 合并并去重（避免 r_switch 重复）
-    r = np.concatenate([r_log, r_lin])
-    # 去重并保证严格单调
-    r = np.unique(r)
+    # 使用显式拼接：去掉r_log的最后一点（因为r_lin的第一点就是r_switch）
+    r = np.concatenate([r_log[:-1], r_lin])
+    # 验证严格单调
+    if not np.all(np.diff(r) > 0):
+        raise ValueError("混合网格生成失败：未能保证严格单调")
     # 权重
     w = trapezoid_weights(r)
     return r, w
