@@ -53,16 +53,73 @@
 
    r_j = R_p (e^{j\\delta} - 1), \\quad j = 0, 1, \\dots, N-1
 
-变量变换：$u_j = v_j \\exp(j\\delta/2)$
+变量变换推导
+^^^^^^^^^^^^
+
+**原始径向 Schrödinger 方程**：
+
+.. math::
+
+   -\\frac{1}{2}\\frac{d^2 u}{dr^2} + \\left[ V(r) + \\frac{\\ell(\\ell+1)}{2r^2} \\right] u = \\varepsilon u
+
+引入变量代换 :math:`u(r) = v(r) \\cdot w(r)`，其中 :math:`w(r) = \\exp(-r/(2R_p))`。
+
+**一阶导数**：
+
+.. math::
+
+   \\frac{du}{dr} = \\frac{dv}{dr} w + v \\frac{dw}{dr} = w \\left( \\frac{dv}{dr} - \\frac{v}{2R_p} \\right)
+
+**二阶导数**：
+
+.. math::
+
+   \\frac{d^2u}{dr^2} = w \\left( \\frac{d^2v}{dr^2} - \\frac{1}{R_p}\\frac{dv}{dr} + \\frac{v}{4R_p^2} \\right)
+
+代入原方程并消去 :math:`w`：
+
+.. math::
+
+   -\\frac{1}{2}\\frac{d^2v}{dr^2} + \\frac{1}{2R_p}\\frac{dv}{dr} + \\left[ V(r) + \\frac{\\ell(\\ell+1)}{2r^2} - \\frac{1}{8R_p^2} \\right] v = \\varepsilon v
+
+**在指数网格上离散化**：
+
+取 :math:`R_p = 1/\\delta`，则：
+
+.. math::
+
+   -\\frac{1}{2}\\frac{d^2v}{dr^2} + \\left[ V(r) + \\frac{\\ell(\\ell+1)}{2r^2} - \\frac{\\delta^2}{8} \\right] v = \\varepsilon v
+
+关键特性：**一阶导数项消失**，Hamiltonian 矩阵对称。
+
+**数值实现**：
+
+在网格点 :math:`r_j` 上：
+
+.. math::
+
+   u_j = v_j \\exp\\left(-\\frac{r_j}{2R_p}\\right) = v_j \\exp\\left(-\\frac{j\\delta}{2}\\right)
+
+反解：
+
+.. math::
+
+   v_j = u_j \\exp\\left(\\frac{j\\delta}{2}\\right)
 
 **优点**：
 - 精度提升 ~7x（相比线性网格）
 - 速度提升 ~3x
-- 包含 $r=0$ 点（$j=0 \\Rightarrow r=0$）
+- 包含 :math:`r=0` 点（:math:`j=0 \\Rightarrow r=0`）
+- 对称矩阵可用 :code:`scipy.linalg.eigh()` 求解
 
 **缺点**：
-- 需要额外参数 $(\\delta, R_p)$
-- 变换 Hamiltonian 矩阵非对角
+- 需要额外参数 :math:`(\\delta, R_p)`
+- 变换后有效势包含常数项 :math:`-\\delta^2/8`
+
+**参数选择**：
+
+- :math:`\\delta \\approx 0.01 \\sim 0.05`（控制网格密度）
+- :math:`R_p \\approx Z/4`（Z 为原子序数，优化波函数衰减匹配）
 
 有限差分方法
 ------------
