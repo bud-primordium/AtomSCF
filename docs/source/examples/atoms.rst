@@ -427,6 +427,5 @@ RHF 计算
 下一步
 ------
 
-- :doc:`benchmarks`: 与文献数据系统对比
 - :doc:`../algorithm/hartree_fock`: HF 理论深入
 - :doc:`../api/index`: 高级 API 使用

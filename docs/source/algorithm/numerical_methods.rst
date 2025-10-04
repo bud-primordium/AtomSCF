@@ -186,11 +186,11 @@ SCF 循环框架
 1. **初始猜测**：类氢轨道或原子密度叠加
 2. **迭代**：
 
-   a. 构造有效势：$v_{\\text{eff}} = v_{\\text{ext}} + v_H + v_{xc}$（DFT）或 $v_{\\text{ext}} + v_H + \\hat{K}$（HF）
+   a. 构造有效势：:math:`v_{\text{eff}} = v_{\text{ext}} + v_H + v_{xc}`（DFT）或 :math:`v_{\text{ext}} + v_H + \hat{K}`（HF）
    b. 求解 KS/Fock 方程
-   c. 更新密度：$n^{(k+1)} = \\sum_i n_i |\\psi_i^{(k+1)}|^2$
-   d. 密度混合：$n_{\\text{mix}} = \\alpha n^{(k+1)} + (1-\\alpha) n^{(k)}$
-   e. 检查收敛：$\\|n^{(k+1)} - n^{(k)}\\| < \\epsilon$
+   c. 更新密度：:math:`n^{(k+1)} = \sum_i n_i |\psi_i^{(k+1)}|^2`
+   d. 密度混合：:math:`n_{\text{mix}} = \alpha n^{(k+1)} + (1-\alpha) n^{(k)}`
+   e. 检查收敛：:math:`\|n^{(k+1)} - n^{(k)}\| < \epsilon`
 
 3. **后处理**：计算总能量和其他性质
 

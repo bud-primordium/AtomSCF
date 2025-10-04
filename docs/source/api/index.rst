@@ -3,16 +3,11 @@ API 参考
 
 本节提供完整的模块、类和函数接口文档。
 
-.. toctree::
-   :maxdepth: 2
-
-   modules
-
 核心模块
 --------
 
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: generated
    :recursive:
 
    atomscf.grid
@@ -27,7 +22,7 @@ HF 子模块
 ---------
 
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: generated
    :recursive:
 
    atomscf.hf.slater
@@ -38,7 +33,7 @@ HF 子模块
 -------------
 
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: generated
    :recursive:
 
    atomscf.xc.lda
@@ -52,6 +47,7 @@ HF 子模块
 ~~~~~~~~
 
 .. autosummary::
+   :toctree: generated
 
    atomscf.grid.radial_grid_linear
    atomscf.grid.radial_grid_log
@@ -62,6 +58,7 @@ HF 计算
 ~~~~~~~
 
 .. autosummary::
+   :toctree: generated
 
    atomscf.scf_hf.run_hf_minimal
    atomscf.scf_hf.run_hf_scf_s
@@ -71,6 +68,7 @@ DFT 计算
 ~~~~~~~~
 
 .. autosummary::
+   :toctree: generated
 
    atomscf.scf.run_lsda_x_only
    atomscf.scf.run_lsda_pz81
@@ -80,47 +78,31 @@ DFT 计算
 ~~~~~~~~~~
 
 .. autosummary::
+   :toctree: generated
 
    atomscf.operator.solve_bound_states_fd
    atomscf.operator.solve_bound_states_fd5
-   atomscf.operator.solve_bound_states_numerov
    atomscf.operator.solve_bound_states_transformed
 
 配置与结果类
 ------------
 
-HF 配置
-~~~~~~~
+HF 配置与结果
+~~~~~~~~~~~~~
 
-.. autoclass:: atomscf.scf_hf.HFConfig
-   :members:
-   :show-inheritance:
+.. autosummary::
+   :toctree: generated
 
-.. autoclass:: atomscf.scf_hf.HFSCFGeneralConfig
-   :members:
-   :show-inheritance:
+   atomscf.scf_hf.HFConfig
+   atomscf.scf_hf.HFSCFGeneralConfig
+   atomscf.scf_hf.HFResult
+   atomscf.scf_hf.HFSCFGeneralResult
 
-HF 结果
-~~~~~~~
+DFT 配置与结果
+~~~~~~~~~~~~~~
 
-.. autoclass:: atomscf.scf_hf.HFResult
-   :members:
-   :show-inheritance:
+.. autosummary::
+   :toctree: generated
 
-.. autoclass:: atomscf.scf_hf.HFSCFGeneralResult
-   :members:
-   :show-inheritance:
-
-DFT 配置
-~~~~~~~~
-
-.. autoclass:: atomscf.scf.SCFConfig
-   :members:
-   :show-inheritance:
-
-DFT 结果
-~~~~~~~~
-
-.. autoclass:: atomscf.scf.SCFResult
-   :members:
-   :show-inheritance:
+   atomscf.scf.SCFConfig
+   atomscf.scf.SCFResult

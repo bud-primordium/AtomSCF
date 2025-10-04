@@ -13,3 +13,10 @@ outputs/
 .vscode/
 
 AtomSCF.xml
+
+*.egg-info/
+
+# Sphinx documentation
+docs/build/
+docs/source/api/generated/
+build/
