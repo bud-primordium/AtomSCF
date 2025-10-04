@@ -35,14 +35,12 @@ References
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Tuple
 
 import numpy as np
 
-from .grid import trapezoid_weights
 from .hartree import v_hartree
 from .hf import SlaterIntegralCache, exchange_operator_s
-from .operator import radial_hamiltonian_matrix, solve_bound_states_fd
+from .operator import build_transformed_hamiltonian, radial_hamiltonian_matrix, solve_bound_states_fd
 from .utils import trapz
 
 __all__ = ["HFConfig", "HFResult", "run_hf_minimal", "run_hf_scf_s"]
@@ -121,6 +119,10 @@ class HFSCFConfig:
         最大 SCF 迭代数
     initial_guess : str
         初始猜测方式："hydrogen" 或 "lsda"
+    delta : float | None
+        变量变换参数 δ（仅用于指数网格）
+    Rp : float | None
+        变量变换参数 R_p（仅用于指数网格）
     """
 
     Z: int
@@ -132,6 +134,8 @@ class HFSCFConfig:
     tol: float = 1e-6
     maxiter: int = 100
     initial_guess: str = "hydrogen"
+    delta: float | None = None
+    Rp: float | None = None
 
 
 @dataclass
@@ -256,6 +260,10 @@ def run_hf_scf_s(cfg: HFSCFConfig) -> HFSCFResult:
     # Slater 积分缓存
     cache = SlaterIntegralCache()
 
+    # 边界处理（FD2: 两端各去掉 1 个点）
+    n_boundary_left = 1
+    n_boundary_right = 1
+
     # SCF 主循环
     converged = False
     for iteration in range(cfg.maxiter):
@@ -272,20 +280,48 @@ def run_hf_scf_s(cfg: HFSCFConfig) -> HFSCFResult:
         v_H = v_hartree(n_3d, r, w)
 
         # 3. 构造 Fock 矩阵
-        F_matrix = _build_fock_matrix_s(
-            r, w, l=0, v_ext=v_ext, v_H=v_H, u_occ=u_orbitals, occ_nums=occ_nums, cache=cache
+        F_matrix, B_matrix = _build_fock_matrix_s(
+            r,
+            w,
+            l=0,
+            v_ext=v_ext,
+            v_H=v_H,
+            u_occ=u_orbitals,
+            occ_nums=occ_nums,
+            cache=cache,
+            delta=cfg.delta,
+            Rp=cfg.Rp,
         )
 
-        # 4. 对角化
-        eigs, vecs = np.linalg.eigh(F_matrix)
+        # 4. 对角化（广义或标准特征值问题）
+        use_transformed = B_matrix is not None
+        if use_transformed:
+            from scipy.linalg import eigh
+
+            eigs, vecs_v = eigh(F_matrix, B_matrix)
+        else:
+            eigs, vecs_v = np.linalg.eigh(F_matrix)
 
         # 5. 提取占据态（从内部点重构完整波函数）
         u_new_orbitals = []
         for i_occ in range(n_occ):
-            u_inner = vecs[:, i_occ]
-            # 边界补零（Dirichlet）
-            u_full = np.zeros(len(r))
-            u_full[1:-1] = u_inner
+            v_inner = vecs_v[:, i_occ]
+
+            if use_transformed:
+                # 变换回 u 空间：u(j) = v(j) * exp(j*delta/2), j=1..n-1
+                j_vals = np.arange(1, len(r))
+                transform = np.exp(j_vals * cfg.delta / 2.0)
+                u_inner = v_inner * transform
+
+                # 边界补零
+                u_full = np.zeros(len(r))
+                u_full[0] = 0.0
+                u_full[1:] = u_inner
+            else:
+                # 标准 FD2：边界补零
+                u_full = np.zeros(len(r))
+                u_full[n_boundary_left : len(r) - n_boundary_right] = v_inner
+
             # 归一化
             norm = np.sqrt(trapz(u_full**2, r, w))
             u_full /= norm
@@ -344,7 +380,9 @@ def _build_fock_matrix_s(
     u_occ: list[np.ndarray],
     occ_nums: list[float],
     cache: SlaterIntegralCache,
-) -> np.ndarray:
+    delta: float | None = None,
+    Rp: float | None = None,
+) -> tuple[np.ndarray, np.ndarray | None]:
     r"""构造 s 轨道的 Fock 矩阵。
 
     Fock 矩阵定义为：
@@ -372,35 +410,86 @@ def _build_fock_matrix_s(
         占据数
     cache : SlaterIntegralCache
         Slater 积分缓存
+    delta : float | None
+        变量变换参数（如提供则使用变换方法）
+    Rp : float | None
+        变量变换参数
 
     Returns
     -------
-    np.ndarray
-        Fock 矩阵（内部点，形状 (n-2, n-2)）
+    F_matrix : np.ndarray
+        Fock 矩阵（内部点）
+    B_matrix : np.ndarray | None
+        质量矩阵（仅变换方法返回，否则为 None）
     """
-    # 1. 局域哈密顿矩阵（内部点）
-    H_loc, r_inner = radial_hamiltonian_matrix(r, l, v_ext + v_H)
-    n_inner = len(r_inner)
+    use_transformed = (delta is not None) and (Rp is not None)
 
-    # 2. 构造交换矩阵（通过应用算子到基向量）
-    K_op = exchange_operator_s(r, w, u_occ, occ_nums, cache=cache)
+    if use_transformed:
+        # 使用变量变换构造局域 Hamiltonian
+        H_loc, B, r_inner = build_transformed_hamiltonian(r, l, v_ext + v_H, delta, Rp)
+        n_inner = len(r_inner)
 
-    K_matrix = np.zeros((n_inner, n_inner))
-    for j in range(n_inner):
-        # 构造第 j 个基向量（完整网格）
-        e_j_full = np.zeros(len(r))
-        e_j_full[j + 1] = 1.0  # 注意：内部点从索引 1 开始
+        # 构造交换矩阵（在 v 空间，需要 u ↔ v 转换）
+        K_op = exchange_operator_s(r, w, u_occ, occ_nums, cache=cache)
+        K_matrix = np.zeros((n_inner, n_inner))
 
-        # 应用交换算子
-        K_e_j_full = K_op(e_j_full)
+        # 变换因子: u(j) = v(j) * exp(j*delta/2)，j=1..n-1
+        j_vals = np.arange(1, len(r))
+        transform = np.exp(j_vals * delta / 2.0)
 
-        # 提取内部点
-        K_matrix[:, j] = K_e_j_full[1:-1]
+        # 预计算所有基函数的 K 作用结果（在 v 空间）
+        K_v_basis = []
+        for j in range(n_inner):
+            # 第 j 个 v 空间基向量（内部点）
+            v_j_inner = np.zeros(n_inner)
+            v_j_inner[j] = 1.0
 
-    # 3. Fock 矩阵 = 局域 + 交换
-    F_matrix = H_loc + K_matrix
+            # 转换到 u 空间（完整网格，包含边界）
+            u_j_full = np.zeros(len(r))
+            u_j_full[0] = 0.0
+            u_j_full[1:] = v_j_inner * transform
 
-    return F_matrix
+            # 应用交换算子（在 u 空间）
+            K_u_j_full = K_op(u_j_full)
+
+            # 转换回 v 空间（仅内部点）
+            K_v_j_inner = K_u_j_full[1:] / transform
+            K_v_basis.append(K_v_j_inner)
+
+        # 计算矩阵元：<v_i | K | v_j>_B = sum_k v_i[k] * (K v_j)[k] * B[k,k]
+        # 由于基是 delta 函数，v_i 只在 i 处为 1，所以简化为：
+        for i in range(n_inner):
+            for j in range(n_inner):
+                K_matrix[i, j] = K_v_basis[j][i] * B[i, i]
+
+        # 对称化
+        K_matrix = 0.5 * (K_matrix + K_matrix.T)
+        F_matrix = H_loc + K_matrix
+        F_matrix = 0.5 * (F_matrix + F_matrix.T)
+
+        return F_matrix, B
+
+    else:
+        # 标准 FD2 方法
+        H_loc, r_inner = radial_hamiltonian_matrix(r, l, v_ext + v_H)
+        n_inner = len(r_inner)
+        n_boundary_left = 1
+        n_boundary_right = 1
+
+        K_op = exchange_operator_s(r, w, u_occ, occ_nums, cache=cache)
+        K_matrix = np.zeros((n_inner, n_inner))
+
+        for j in range(n_inner):
+            e_j_full = np.zeros(len(r))
+            e_j_full[j + n_boundary_left] = 1.0
+            K_e_j_full = K_op(e_j_full)
+            K_matrix[:, j] = K_e_j_full[n_boundary_left : len(r) - n_boundary_right]
+
+        K_matrix = 0.5 * (K_matrix + K_matrix.T)
+        F_matrix = H_loc + K_matrix
+        F_matrix = 0.5 * (F_matrix + F_matrix.T)
+
+        return F_matrix, None
 
 
 def _compute_hf_energies(

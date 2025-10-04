@@ -85,6 +85,7 @@ __all__ = [
     "solve_bound_states_fd5",
     "solve_bound_states_fd5_auxlinear",
     "solve_bound_states_transformed",
+    "build_transformed_hamiltonian",  # 新增：HF 复用
 ]
 
 
@@ -620,3 +621,86 @@ def solve_bound_states_transformed(
         U_out[idx] = u
 
     return eps, U_out
+
+
+def build_transformed_hamiltonian(
+    r: np.ndarray,
+    l: int,
+    v_of_r: np.ndarray,
+    delta: float,
+    Rp: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    r"""构造变量变换的 Hamiltonian 和质量矩阵（HF 复用）。
+
+    返回广义特征值问题的矩阵形式（但不求解）：
+
+        H v = E B v
+
+    其中 v 是变换后的波函数。
+
+    Parameters
+    ----------
+    r : np.ndarray
+        指数变换网格
+    l : int
+        角动量量子数
+    v_of_r : np.ndarray
+        势能（含外势 + Hartree）
+    delta : float
+        网格参数 δ
+    Rp : float
+        网格参数 R_p
+
+    Returns
+    -------
+    H : np.ndarray
+        Hamiltonian 矩阵（去掉 j=0 后的尺寸 n-1 × n-1）
+    B : np.ndarray
+        质量矩阵（对角，尺寸 n-1 × n-1）
+    r_inner : np.ndarray
+        内部网格点（去掉 j=0，长度 n-1）
+
+    Notes
+    -----
+    该函数抽取自 solve_bound_states_transformed，
+    用于 HF 中构造局域 Hamiltonian 部分。
+
+    交换矩阵 K 仍在原始 u(r) 空间构造，
+    需要在 v 和 u 之间转换：u(j) = v(j) * exp(j*delta/2)
+    """
+    if v_of_r.shape != r.shape:
+        raise ValueError("v_of_r 的形状必须与 r 相同")
+    if l < 0:
+        raise ValueError("l 必须为非负整数")
+
+    n = r.size
+    if n < 3:
+        raise ValueError("至少需要 3 个网格点")
+
+    # 去掉 j=0 点（近核奇异）
+    n_reduced = n - 1
+    r_inner = r[1:]  # j=1, 2, ..., n-1
+
+    # 有效势能
+    V_eff = v_of_r + 0.5 * l * (l + 1) / (r**2 + 1e-30)
+
+    # 构造 H 矩阵（三对角）
+    H = np.zeros((n_reduced, n_reduced), dtype=float)
+    B = np.zeros((n_reduced, n_reduced), dtype=float)
+
+    for i in range(n_reduced):
+        j_actual = i + 1  # 实际网格索引
+        exp_factor = 2.0 * delta**2 * Rp**2 * np.exp(2.0 * delta * j_actual)
+
+        # H 矩阵元
+        if i > 0:
+            H[i, i - 1] = -1.0
+        H[i, i] = 2.0 + delta**2 / 4.0 + exp_factor * V_eff[j_actual]
+        if i < n_reduced - 1:
+            H[i, i + 1] = -1.0
+
+        # B 矩阵（对角）
+        B[i, i] = 2.0 * delta**2 * Rp**2 * np.exp(2.0 * delta * j_actual)
+
+    return H, B, r_inner
+
