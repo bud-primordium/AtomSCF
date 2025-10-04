@@ -11,11 +11,11 @@ from .operator import (
     solve_bound_states_fd,
     solve_bound_states_fd5,
     solve_bound_states_fd5_auxlinear,
+    solve_bound_states_transformed,
 )
 from .numerov import numerov_eigen_log_ground, numerov_find_k_log, numerov_find_k_log_matching
 from .occupations import OrbitalSpec, default_occupations
 from .utils import trapz, normalize_radial_u
-from .numerov import numerov_eigen_log_ground, numerov_find_k_log
 from .xc.lda import vx_dirac, lda_c_pz81, ex_dirac_density
 from .xc.vwn import lda_c_vwn
 
@@ -44,10 +44,20 @@ def _estimate_energy_bounds(Z: int, l: int) -> tuple[float, float]:
 def _solve_channel(cfg: 'SCFConfig', r: np.ndarray, l: int, v: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
     """根据 cfg.eig_solver 选择求解器，返回 (eps, U)。
 
+    - transformed：变量变换方法（需要 cfg.delta 和 cfg.Rp）
     - numerov：要求 r 为对数等距网格（ln r 等差）。
     - fd5：等间距线性网格五点格式（不满足时回退到 fd）。
     - fd：默认二阶 FD（非均匀）。
+
+    注意：非等距网格上的二阶FD矩阵不对称，不能用eigh，会自动切换到FD5-aux。
     """
+    if cfg.eig_solver == "transformed":
+        # 变量变换方法：需要 delta 和 Rp 参数
+        if cfg.delta is None or cfg.Rp is None:
+            raise ValueError("eig_solver='transformed' 需要提供 cfg.delta 和 cfg.Rp 参数")
+        return solve_bound_states_transformed(
+            r, l=l, v_of_r=v, delta=cfg.delta, Rp=cfg.Rp, k=k, use_sparse=False
+        )
     if cfg.eig_solver == "numerov":
         try:
             # 使用匹配法/节点计数的 Numerov：对数等距网格；能量窗口基于氢样估计
@@ -55,7 +65,7 @@ def _solve_channel(cfg: 'SCFConfig', r: np.ndarray, l: int, v: np.ndarray, k: in
             # 直接尝试取所需 k 个态，失败再整体回退到 FD
             from .numerov import numerov_find_k_log_by_nodes
             eps, U = numerov_find_k_log_by_nodes(
-                r, v, l, k=k, eps_min=eps_min, eps_max=eps_max, samples=240, bisection_iter=100
+                r, v, l, k=k, eps_min=eps_min, eps_max=eps_max, samples=120, bisection_iter=50
             )
             wloc = trapezoid_weights(r)
             for j in range(U.shape[0]):
@@ -70,12 +80,18 @@ def _solve_channel(cfg: 'SCFConfig', r: np.ndarray, l: int, v: np.ndarray, k: in
         except Exception:
             pass
     if cfg.eig_solver == "fd5_aux":
-        try:
-            return solve_bound_states_fd5_auxlinear(r, l=l, v_of_r=v, k=k)
-        except Exception:
-            pass
-    # 默认兜底：原始 FD（非均匀二阶），稳健但可能较慢
-    return solve_bound_states_fd(r, l=l, v_of_r=v, k=k)
+        return solve_bound_states_fd5_auxlinear(r, l=l, v_of_r=v, k=k)
+
+    # 默认 fd 求解器：检测网格是否等距
+    # 非等距网格的FD二阶导数矩阵不对称，不能用eigh，必须改用FD5-aux
+    dr = np.diff(r)
+    is_uniform = np.allclose(dr, dr[0], atol=1e-12, rtol=0)
+    if not is_uniform:
+        # 非等距网格：自动切换到FD5-aux稳妥路径
+        return solve_bound_states_fd5_auxlinear(r, l=l, v_of_r=v, k=k)
+    else:
+        # 等距网格：可以安全使用FD
+        return solve_bound_states_fd(r, l=l, v_of_r=v, k=k)
 
 
 @dataclass
@@ -113,7 +129,7 @@ class SCFConfig:
     tol: float = 1e-7
     occ: List[OrbitalSpec] | None = None
     eigs_per_l: int = 3
-    eig_solver: str = "fd"  # 可选："fd"（默认）、"fd5"（线性等间距五点）
+    eig_solver: str = "fd"  # 可选："fd"（默认）、"fd5"（线性等间距五点）、"transformed"（变量变换方法）
     compute_all_l: bool = True
     # 计算所有 l 的模式："always"（每轮都算）、"final"（仅在收敛后补齐）、"none"（只算占据所需）
     compute_all_l_mode: str = "final"
@@ -123,6 +139,9 @@ class SCFConfig:
     adapt_mixing: bool = False
     mix_alpha_min: float = 0.05
     xc: str = "PZ81"  # 可选 "PZ81" 或 "VWN"
+    # 变量变换方法所需参数（仅当 eig_solver="transformed" 时需要）
+    delta: float | None = None  # 网格参数 δ（从 radial_grid_exp_transformed 获取）
+    Rp: float | None = None  # 网格参数 R_p（从 radial_grid_exp_transformed 获取）
 
 
 @dataclass
@@ -401,13 +420,7 @@ def run_lsda_pz81(cfg: SCFConfig, verbose: bool = False, progress_every: int = 1
         for (l, spin), nmax in sorted(need.items()):
             k = max(nmax + 1, cfg.eigs_per_l)
             v = v_up if spin == "up" else v_dn
-            if cfg.eig_solver == "fd5":
-                try:
-                    eps, U = solve_bound_states_fd5(r, l=l, v_of_r=v, k=k)
-                except Exception:
-                    eps, U = _solve_channel(cfg, r, l, v, k)
-            else:
-                eps, U = _solve_channel(cfg, r, l, v, k)
+            eps, U = _solve_channel(cfg, r, l, v, k)
             new_eps_by_l_sigma[(l, spin)] = eps
             new_u_by_l_sigma[(l, spin)] = U
 
@@ -489,13 +502,8 @@ def run_lsda_pz81(cfg: SCFConfig, verbose: bool = False, progress_every: int = 1
         for l_all in range(0, cfg.lmax + 1):
             for spin in ("up", "down"):
                 v_sel = v_up if spin == "up" else v_dn
-                if cfg.eig_solver == "fd5":
-                    try:
-                        eps, U = solve_bound_states_fd5(r, l=l_all, v_of_r=v_sel, k=max(cfg.eigs_per_l, 1))
-                    except Exception:
-                        eps, U = solve_bound_states_fd(r, l=l_all, v_of_r=v_sel, k=max(cfg.eigs_per_l, 1))
-                else:
-                    eps, U = solve_bound_states_fd(r, l=l_all, v_of_r=v_sel, k=max(cfg.eigs_per_l, 1))
+                # 复用 _solve_channel，尊重 eig_solver 配置，避免强制 FD
+                eps, U = _solve_channel(cfg, r, l_all, v_sel, k=max(cfg.eigs_per_l, 1))
                 all_eps[(l_all, spin)] = eps
                 all_u[(l_all, spin)] = U
         eps_by_l_sigma = all_eps
@@ -544,7 +552,7 @@ def run_lsda_vwn(cfg: SCFConfig, verbose: bool = False, progress_every: int = 10
         for spec in occ:
             key = (spec.l, spec.spin)
             need[key] = max(need.get(key, -1), spec.n_index)
-        if cfg.compute_all_l:
+        if cfg.compute_all_l and cfg.compute_all_l_mode == "always":
             for l_all in range(0, cfg.lmax + 1):
                 for spin in ("up", "down"):
                     need.setdefault((l_all, spin), max(cfg.eigs_per_l - 1, 0))
@@ -554,13 +562,7 @@ def run_lsda_vwn(cfg: SCFConfig, verbose: bool = False, progress_every: int = 10
         for (l, spin), nmax in sorted(need.items()):
             k = max(nmax + 1, cfg.eigs_per_l)
             v = v_up if spin == "up" else v_dn
-            if cfg.eig_solver == "fd5":
-                try:
-                    eps, U = solve_bound_states_fd5(r, l=l, v_of_r=v, k=k)
-                except Exception:
-                    eps, U = _solve_channel(cfg, r, l, v, k)
-            else:
-                eps, U = _solve_channel(cfg, r, l, v, k)
+            eps, U = _solve_channel(cfg, r, l, v, k)
             new_eps_by_l_sigma[(l, spin)] = eps
             new_u_by_l_sigma[(l, spin)] = U
 
@@ -636,7 +638,8 @@ def run_lsda_vwn(cfg: SCFConfig, verbose: bool = False, progress_every: int = 10
         for l_all in range(0, cfg.lmax + 1):
             for spin in ("up", "down"):
                 v_sel = v_up if spin == "up" else v_dn
-                eps, U = solve_bound_states_fd(r, l=l_all, v_of_r=v_sel, k=max(cfg.eigs_per_l, 1))
+                # 复用 _solve_channel，尊重 eig_solver 配置，避免强制 FD
+                eps, U = _solve_channel(cfg, r, l_all, v_sel, k=max(cfg.eigs_per_l, 1))
                 all_eps[(l_all, spin)] = eps
                 all_u[(l_all, spin)] = U
         eps_by_l_sigma = all_eps

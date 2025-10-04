@@ -40,9 +40,20 @@ def _numerov_forward(y0: float, y1: float, h: float, Q: np.ndarray) -> np.ndarra
 def numerov_eigen_log_ground(r: np.ndarray, v_eff: np.ndarray, l: int, eps_bounds: tuple[float, float] = (-50.0, -1e-6), max_iter: int = 60, tol: float = 1e-8) -> tuple[float, np.ndarray]:
     """在对数网格上用 Numerov 寻找基态（给定 l）的本征对（粗略版）。
 
+    .. deprecated::
+        此函数已不推荐使用，建议改用 `numerov_find_k_log_by_nodes` 以获得更好的稳定性和多态支持。
+        保留以支持教学型示例和向后兼容。
+
     仅用于教学与快速逼近：采用末端值符号变化作为二分根搜索指标，未做节点计数与匹配优化。
     若二分失败，抛出 RuntimeError。
     """
+    import warnings
+    warnings.warn(
+        "numerov_eigen_log_ground 已被 numerov_find_k_log_by_nodes 替代，"
+        "计划在未来版本中移除。请更新您的代码。",
+        DeprecationWarning,
+        stacklevel=2
+    )
     ok, h, s = _is_uniform_log_grid(r)
     if not ok:
         raise ValueError("numerov_eigen_log_ground 要求 r 为对数等距网格（ln r 等差）")
@@ -122,11 +133,22 @@ def numerov_find_k_log(
 ) -> tuple[np.ndarray, np.ndarray]:
     """在对数等距网格上，用 Numerov 扫描能量段并用二分逼近，寻找前 k 个本征态（粗略）。
 
+    .. deprecated::
+        此函数已不推荐使用，建议改用 `numerov_find_k_log_by_nodes` 以获得更精确的节点计数和根选择。
+        保留以支持教学型示例和向后兼容。
+
     说明：
     - 仅用于原型与教学，未做匹配/外向积分等高级稳定化；
     - 通过扫描区间 [eps_min, eps_max]，记录 y_end 的符号变化来判别根，辅以节点计数判断态序；
     - 返回 (eps[:k], U[:k, :])，若不足 k 个根则返回找到的所有根。
     """
+    import warnings
+    warnings.warn(
+        "numerov_find_k_log 已被 numerov_find_k_log_by_nodes 替代，"
+        "计划在未来版本中移除。请更新您的代码。",
+        DeprecationWarning,
+        stacklevel=2
+    )
     ok, h, s = _is_uniform_log_grid(r)
     if not ok:
         raise ValueError("numerov_find_k_log 要求 r 为对数等距网格（ln r 等差）")
@@ -224,6 +246,10 @@ def numerov_find_k_log_matching(
 ) -> tuple[np.ndarray, np.ndarray]:
     """匹配法 Numerov：在对数等距网格上寻找前 k 个本征态（更稳定）。
 
+    .. deprecated::
+        此函数已不推荐使用，建议改用 `numerov_find_k_log_by_nodes` 作为生产环境的主力求解器。
+        保留以支持教学型示例、方法对比研究和向后兼容。
+
     思路：
     - 选匹配点 i_m（默认中点），从左端与右端分别进行 Numerov 积分；
     - 计算匹配点的对数导数差 L_left - L_right；
@@ -231,6 +257,13 @@ def numerov_find_k_log_matching(
     - 通过节点计数辅助判断根的态序；
     - 合并左右解并按匹配点归一（保证函数连续），转换回 u(r)。
     """
+    import warnings
+    warnings.warn(
+        "numerov_find_k_log_matching 已被 numerov_find_k_log_by_nodes 替代，"
+        "计划在未来版本中移除。请更新您的代码。",
+        DeprecationWarning,
+        stacklevel=2
+    )
     ok, h, s = _is_uniform_log_grid(r)
     if not ok:
         raise ValueError("numerov_find_k_log_matching 要求 r 为对数等距网格（ln r 等差）")
@@ -253,9 +286,10 @@ def numerov_find_k_log_matching(
         y1L = np.exp((l + 0.5) * (s[1] - s0))
         yL = _numerov_forward(y0L, y1L, h, Q)
         # 右端初值（远端指数衰减，按局部 kappa 给两点初值）
-        # kappa^2 = 2 (eps - V_eff_tot)（若为正则指数衰减）
+        # kappa^2 = 2 (V_eff_tot - eps)（束缚态 E < V，渐近衰减）
+        # 参考 codex reply_check_4.md 第 68 行
         Vtot = v_eff + 0.5 * l * (l + 1.0) / np.maximum(r * r, 1e-30)
-        kappa2 = 2.0 * np.maximum(eps - Vtot, 0.0)
+        kappa2 = 2.0 * np.maximum(Vtot - eps, 0.0)  # 修正符号
         kappa = np.sqrt(kappa2 + 1e-30)
         # 近似 y ~ exp(-kappa r) → 在 s=ln r 坐标，步长对应 dr/r = ds，取一个温和衰减比例
         decay = np.exp(-kappa[-1] * (r[-1] - r[-2]))
