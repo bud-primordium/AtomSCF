@@ -30,6 +30,12 @@
 
 """
 
+from .angular import (
+    allowed_k_values,
+    coupling_factor_ak,
+    get_coupling_factor,
+    wigner_3j_squared,
+)
 from .slater import (
     SlaterIntegralCache,
     slater_integral_k0,
@@ -41,4 +47,9 @@ __all__ = [
     "slater_integral_radial",
     "slater_integral_k0",
     "SlaterIntegralCache",
+    # 角动量耦合
+    "allowed_k_values",
+    "wigner_3j_squared",
+    "coupling_factor_ak",
+    "get_coupling_factor",
 ]
