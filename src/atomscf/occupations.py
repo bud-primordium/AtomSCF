@@ -9,14 +9,14 @@ Spin = Literal["up", "down"]
 
 @dataclass(frozen=True)
 class OrbitalSpec:
-    """轨道占据信息（径向通道）
+    r"""轨道占据信息（径向通道）
 
     Attributes
     ----------
     l : int
         角动量量子数 :math:`\ell`。
     n_index : int
-        同一 :math:`\ell` 通道内的径向量子数索引（0 表示最低能，即 1s/2p 等的“1”）。
+        同一 :math:`\ell` 通道内的径向量子数索引（0 表示最低能，即 1s/2p 等的"1"）。
     spin : {"up", "down"}
         自旋通道。
     f_per_m : float
@@ -33,12 +33,12 @@ class OrbitalSpec:
 
 
 def default_occupations(Z: int) -> list[OrbitalSpec]:
-    """针对 H 与 C，返回球对称平均下的默认占据方案。
+    """返回原子基态的默认电子占据方案（球对称平均）。
 
     Parameters
     ----------
     Z : int
-        原子序数，目前支持 1（H）与 6（C）。
+        原子序数 (1-18)。
 
     Returns
     -------
@@ -47,26 +47,79 @@ def default_occupations(Z: int) -> list[OrbitalSpec]:
 
     Notes
     -----
-    - H (Z=1): 1s 单占（默认自旋向上）。
-    - C (Z=6): 1s^2 2s^2 2p^2；为保持球对称，2p 壳层采用 m 平均且自旋极化：
-      2p_up :math:`f=2/3`，2p_down :math:`f=0`。
-    - 若需其他元素/组态，可在后续扩展或提供手动占据接口。
+    - **仅支持 Z=1-18**，填充顺序为 1s → 2s → 2p → 3s → 3p
+    - 闭壳层原子 (He, Be, Ne, Mg, Ar): 所有轨道自旋配对
+    - 开壳层原子: 采用 Hund 规则（最大自旋多重度），球对称平均占据
+    - **警告**: Z>18 需要考虑能级交叉（如 K: 4s 先于 3d），当前实现不支持
+    - 示例:
+      - H (Z=1): 1s¹ (自旋向上)
+      - He (Z=2): 1s²
+      - C (Z=6): 1s² 2s² 2p² (2p: ↑↑, m 平均)
+      - Ne (Z=10): 1s² 2s² 2p⁶
+      - Ar (Z=18): [Ne] 3s² 3p⁶
     """
-    if Z == 1:
-        return [
-            OrbitalSpec(l=0, n_index=0, spin="up", f_per_m=1.0, label="1s_up"),
-        ]
-    if Z == 6:
-        return [
-            # 1s^2
-            OrbitalSpec(l=0, n_index=0, spin="up", f_per_m=1.0, label="1s_up"),
-            OrbitalSpec(l=0, n_index=0, spin="down", f_per_m=1.0, label="1s_down"),
-            # 2s^2（n_index=1 表示第二个 s 轨道，即 2s）
-            OrbitalSpec(l=0, n_index=1, spin="up", f_per_m=1.0, label="2s_up"),
-            OrbitalSpec(l=0, n_index=1, spin="down", f_per_m=1.0, label="2s_down"),
-            # 2p^2：m 平均 + 自旋极化（Hund 规则），f_per_m=2/3，down=0
-            OrbitalSpec(l=1, n_index=0, spin="up", f_per_m=2.0 / 3.0, label="2p_up"),
-            # down 通道留空（0），不返回占据以免影响密度
-        ]
-    raise ValueError("当前仅支持 Z=1 (H) 与 Z=6 (C) 的默认占据方案")
+    occ = []
+
+    # 闭壳层填充辅助函数
+    def add_closed_shell(l, n_index, label_prefix):
+        occ.append(OrbitalSpec(l=l, n_index=n_index, spin="up", f_per_m=1.0, label=f"{label_prefix}_up"))
+        occ.append(OrbitalSpec(l=l, n_index=n_index, spin="down", f_per_m=1.0, label=f"{label_prefix}_down"))
+
+    # 部分填充辅助函数（用于开壳层，简单自旋极化）
+    def add_partial_shell(l, n_index, label_prefix, n_electrons):
+        max_per_shell = 2 * (2 * l + 1)
+        if n_electrons <= 0:
+            return
+        elif n_electrons >= max_per_shell:
+            add_closed_shell(l, n_index, label_prefix)
+        else:
+            # Hund 规则：先填自旋向上
+            n_up = min(n_electrons, 2 * l + 1)
+            n_down = n_electrons - n_up
+            if n_up > 0:
+                occ.append(OrbitalSpec(l=l, n_index=n_index, spin="up",
+                                     f_per_m=n_up / (2 * l + 1), label=f"{label_prefix}_up"))
+            if n_down > 0:
+                occ.append(OrbitalSpec(l=l, n_index=n_index, spin="down",
+                                     f_per_m=n_down / (2 * l + 1), label=f"{label_prefix}_down"))
+
+    # 按原子序数填充（基态电子组态）
+    remaining = Z
+
+    # 1s (n=1, l=0)
+    n_1s = min(remaining, 2)
+    add_partial_shell(0, 0, "1s", n_1s)
+    remaining -= n_1s
+    if remaining == 0:
+        return occ
+
+    # 2s (n=2, l=0)
+    n_2s = min(remaining, 2)
+    add_partial_shell(0, 1, "2s", n_2s)
+    remaining -= n_2s
+    if remaining == 0:
+        return occ
+
+    # 2p (n=2, l=1)
+    n_2p = min(remaining, 6)
+    add_partial_shell(1, 0, "2p", n_2p)
+    remaining -= n_2p
+    if remaining == 0:
+        return occ
+
+    # 3s (n=3, l=0)
+    n_3s = min(remaining, 2)
+    add_partial_shell(0, 2, "3s", n_3s)
+    remaining -= n_3s
+    if remaining == 0:
+        return occ
+
+    # 3p (n=3, l=1)
+    n_3p = min(remaining, 6)
+    add_partial_shell(1, 1, "3p", n_3p)
+    remaining -= n_3p
+    if remaining == 0:
+        return occ
+
+    raise ValueError(f"Z={Z} 超出当前支持范围 (1-18)")
 
