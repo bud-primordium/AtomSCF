@@ -88,6 +88,7 @@ from .slater import SlaterIntegralCache, slater_integral_radial
 __all__ = [
     "exchange_operator_s",
     "exchange_operator_general",
+    "exchange_operator_general_spin",
 ]
 
 
@@ -315,10 +316,118 @@ def exchange_operator_general(
                     # 计算 Slater 积分 R^k_{i,u}(r)
                     R_k = slater_integral_radial(r, w, u_i, u_target, k=k)
 
-                    # 累加交换贡献：-n_i * a_k * R^k * u_i
-                    Ku -= n_i * a_k * R_k * u_i
+                    # 占据数归一化：考虑空间简并和自旋简并
+                    # n_i 为子壳层总占据数，需除以 (2l+1) 个 m 态和 2 个自旋态
+                    g_m = 2 * l_occ + 1  # 空间简并度
+                    n_eff = n_i / (g_m * 2.0)  # 每个 (m, σ) 的平均占据
+                    # 累加交换贡献
+                    Ku -= n_eff * a_k * R_k * u_i
 
         return Ku
 
     return apply_exchange
 
+
+def exchange_operator_general_spin(
+    r: np.ndarray,
+    w: np.ndarray,
+    l_target: int,
+    spin_target: str,
+    u_occ_by_l_spin: dict[tuple[int, str], list[np.ndarray]],
+    occ_nums_by_l_spin: dict[tuple[int, str], list[float]],
+    cache: SlaterIntegralCache | None = None,
+) -> callable:
+    r"""构造自旋分辨的通用交换算子（UHF）。
+
+    Parameters
+    ----------
+    r : np.ndarray
+        径向网格点
+    w : np.ndarray
+        积分权重
+    l_target : int
+        目标轨道的角动量量子数
+    spin_target : str
+        目标轨道的自旋通道（'up' 或 'down'）
+    u_occ_by_l_spin : dict[tuple[int, str], list[np.ndarray]]
+        占据态波函数，按 (l, spin) 索引
+        例如：{(0, 'up'): [u_1s_up], (0, 'down'): [u_1s_down], ...}
+    occ_nums_by_l_spin : dict[tuple[int, str], list[float]]
+        占据数，按 (l, spin) 索引
+        例如：{(0, 'up'): [1.0], (0, 'down'): [1.0], ...}
+    cache : SlaterIntegralCache, optional
+        Slater 积分缓存（可选）
+
+    Returns
+    -------
+    callable
+        交换算子闭包 K[u]，接受目标波函数返回交换作用后的结果
+
+    Notes
+    -----
+    UHF 交换仅在**同自旋**占据态间发生：
+
+    .. math::
+
+        K_{\ell,\sigma}[u](r) = -\sum_{\ell'} \sum_{k \in \text{allowed}}
+        a_k(\ell,\ell') \sum_{i \in \sigma} n_i \cdot R^k_{i,u}(r) \cdot u_{\ell',i}(r)
+
+    与 RHF 的区别：
+    - 求和仅遍历与目标态同自旋的占据态
+    - 占据数 n_i 已按自旋分离，无需除以 2
+    - 保持 m 简并度归一化（除以 2l+1）
+    """
+    from .slater import slater_integral_radial
+
+    def apply_exchange(u_target: np.ndarray) -> np.ndarray:
+        """对目标波函数应用交换算子。
+
+        Parameters
+        ----------
+        u_target : np.ndarray
+            目标径向波函数
+
+        Returns
+        -------
+        np.ndarray
+            交换作用后的波函数
+        """
+        if u_target.shape != r.shape:
+            raise ValueError(f"目标波函数形状 {u_target.shape} 与网格 {r.shape} 不匹配")
+
+        Ku = np.zeros_like(r)
+
+        # 仅遍历同自旋的占据态
+        for (l_occ, spin_occ), u_list in u_occ_by_l_spin.items():
+            if spin_occ != spin_target:
+                continue  # 跳过异自旋态（UHF 交换选择规则）
+
+            n_list = occ_nums_by_l_spin[(l_occ, spin_occ)]
+
+            # 获取允许的 k 值
+            from .angular import allowed_k_values, get_coupling_factor
+
+            k_values = allowed_k_values(l_target, l_occ)
+
+            # 遍历允许的多极指标 k
+            for k in k_values:
+                # 获取耦合因子
+                a_k = get_coupling_factor(l_target, k, l_occ, use_cache=True)
+
+                if np.abs(a_k) < 1e-15:
+                    continue  # 跳过零耦合
+
+                # 遍历该 (l, spin) 通道的所有占据态
+                for i, (u_i, n_i) in enumerate(zip(u_list, n_list)):
+                    # 计算 Slater 积分 R^k_{i,u}(r)
+                    R_k = slater_integral_radial(r, w, u_i, u_target, k=k)
+
+                    # 占据数归一化：仅考虑空间简并度（自旋已分离）
+                    g_m = 2 * l_occ + 1  # 空间简并度
+                    n_eff = n_i / g_m  # 每个 m 的占据（无需除以 2）
+                    # 累加交换贡献
+                    Ku -= n_eff * a_k * R_k * u_i
+
+        return Ku
+
+    return apply_exchange
