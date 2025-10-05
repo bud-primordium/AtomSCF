@@ -175,34 +175,95 @@ pip install -e .[dev]
 
 ### 运行示例
 
-**氢原子（最简单）**：
+**推荐使用统一 CLI**（`examples/run_atom.py`）：
+
 ```bash
-PYTHONPATH=src python examples/run_h_1s_fd.py
+# 基本用法：碳原子 LSDA-VWN（默认配置）
+python examples/run_atom.py --Z 6
+
+# 氢原子
+python examples/run_atom.py --Z 1 --n 2000 --total-span 8
+
+# 铝原子 LDA 模式（用于赝势生成）
+python examples/run_atom.py --Z 13 --mode LDA --n 2000
+
+# 导出供赝势生成器使用
+python examples/run_atom.py --Z 13 --mode LDA --export-ppgen data/al_ae_lda.json
+
+# 完整参数示例
+python examples/run_atom.py \
+  --Z 13 \
+  --grid exp \
+  --solver transformed \
+  --n 2000 \
+  --total-span 8.0 \
+  --rmax 150.0 \
+  --tol 1e-6 \
+  --no-verbose
 ```
 
-**碳原子 LSDA**：
+**默认推荐配置**：
+- `--grid exp`：指数网格（核附近密，远处疏）
+- `--solver transformed`：变量变换方法（快速且稳定）
+- `--n 2000`：网格点数（精度 ~1.5%）
+- `--total-span 8.0`：网格跨度参数
+
+**程序化使用（Python API）**：
+
+```python
+# LSDA-VWN 计算（自旋极化）
+from atomscf.grid import radial_grid_exp_transformed
+from atomscf.scf import run_lsda_vwn, SCFConfig
+
+r, w, delta, Rp = radial_grid_exp_transformed(n=2000, rmin=0.0, rmax=150.0, total_span=8.0)
+cfg = SCFConfig(
+    Z=13, r=r, w=w,
+    eig_solver="transformed",
+    delta=delta, Rp=Rp,
+    tol=1e-6
+)
+result = run_lsda_vwn(cfg, verbose=False)
+print(f"总能量: {result.energies['E_total']:.6f} Ha")
+
+# LDA 模式（赝势生成用，强制自旋对称）
+cfg_lda = SCFConfig(
+    Z=13, r=r, w=w,
+    spin_mode="LDA",  # 强制 n_up = n_dn
+    eig_solver="transformed",
+    delta=delta, Rp=Rp
+)
+result_lda = run_lsda_vwn(cfg_lda)
+
+# 导出供 AtomPPGen 使用
+from atomscf.io import export_for_ppgen
+export_for_ppgen(result_lda, cfg_lda, "data/al_ae_lda.json")
+```
+
+**Legacy 示例**（早期教学用，不推荐）：
+
 ```bash
+# 氢原子（最简单）
+PYTHONPATH=src python examples/run_h_1s_fd.py
+
+# 碳原子 LSDA
 PYTHONPATH=src python examples/run_c_lsda_vwn.py
 ```
 
-**氦原子 RHF**：
-```python
-from atomscf.grid import radial_grid_linear
-from atomscf.scf_hf import run_hf_scf, HFSCFGeneralConfig
+---
 
-r, w = radial_grid_linear(n=800, rmin=1e-6, rmax=50.0)
-config = HFSCFGeneralConfig(
-    Z=2, r=r, w=w,
-    occ_by_l={0: [2.0]},  # 1s²
-    eigs_per_l={0: 1},
-    spin_mode='RHF',
-    mix_alpha=0.5,
-    tol=1e-6,
-    maxiter=100
-)
-result = run_hf_scf(config)
-print(f"总能量: {result.E_total:.6f} Ha")
-```
+## 精度与性能
+
+**测试配置**：`--grid exp --solver transformed --n 2000 --total-span 8.0`
+
+### 典型原子精度（LSDA-VWN vs NIST 非相对论参考）
+
+| 原子 | Z | SCF 轮数 | 计算时间 | E_total (Ha) | NIST (Ha) | 相对误差 |
+|------|---|---------|---------|--------------|-----------|----------|
+| **H** | 1 | 33 | 46.5s | -0.42677 | -0.47867 | **10.84%** |
+| **C** | 6 | 45 | 104.8s | -36.52579 | -37.47003 | **2.52%** |
+| **Al** | 13 | 48 | 112.0s | -237.69169 | -241.32116 | **1.50%** |
+
+---
 
 ### 测试
 
