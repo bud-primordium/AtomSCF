@@ -18,6 +18,7 @@ from atomscf.grid import (
     radial_grid_exp_transformed,
 )
 from atomscf.scf import SCFConfig, run_lsda_vwn, run_lsda_pz81, run_lsda_x_only
+from atomscf.scf_hf import run_hf_scf, HFSCFGeneralConfig
 from atomscf.refdata import load_nist_reference, load_nist_lsd
 from atomscf.io import export_for_ppgen
 from atomscf.occupations import default_occupations
@@ -52,37 +53,88 @@ def build_grid(args):
 
 
 def build_config(args, r, w, params=None):
-    """根据参数构建 SCFConfig。"""
-    cfg_dict = {
-        "Z": args.Z,
-        "r": r,
-        "w": w,
-        "lmax": args.lmax,
-        "eigs_per_l": args.eigs_per_l,
-        "spin_mode": args.mode,
-        "xc": args.xc,
-        "eig_solver": args.solver,
-        "mix_alpha": args.mix_alpha,
-        "tol": args.tol,
-        "maxiter": args.maxiter,
-        "adapt_mixing": args.adapt,
-        "mix_alpha_min": 0.05,
-        "compute_all_l": True,
-        "compute_all_l_mode": "final",
-        "mix_kind": "density",
-    }
+    """根据参数构建配置对象（SCFConfig 或 HFSCFGeneralConfig）。"""
+    if args.method == "HF":
+        # HF 配置
+        # 获取默认占据并转换为 HF 格式
+        occ_list = default_occupations(args.Z)
 
-    # 添加 exp 网格参数
-    if params is not None:
-        cfg_dict["delta"] = params["delta"]
-        cfg_dict["Rp"] = params["Rp"]
+        # 先按 (l, n_index) 分组累加占据数
+        occ_by_l_n = {}
+        for spec in occ_list:
+            l = spec.l
+            n = spec.n_index
+            key = (l, n)
+            if key not in occ_by_l_n:
+                occ_by_l_n[key] = 0.0
+            # f_per_m 是每个 m 的占据，乘以 (2l+1) 得到总占据
+            occ_by_l_n[key] += spec.f_per_m * (2 * l + 1)
 
-    return SCFConfig(**cfg_dict)
+        # 转换为 occ_by_l（按 l 分组，按 n 排序）
+        occ_by_l = {}
+        for (l, n), f in sorted(occ_by_l_n.items()):
+            if l not in occ_by_l:
+                occ_by_l[l] = []
+            occ_by_l[l].append(f)
+
+        # 每个 l 求解的态数（根据占据态数量确定）
+        eigs_per_l = {}
+        for l, occ_list in occ_by_l.items():
+            # 求解的态数至少要包含所有占据态
+            eigs_per_l[l] = len(occ_list)
+
+        cfg_dict = {
+            "Z": args.Z,
+            "r": r,
+            "w": w,
+            "occ_by_l": occ_by_l,
+            "eigs_per_l": eigs_per_l,
+            "spin_mode": args.hf_mode,
+            "mix_alpha": args.mix_alpha,
+            "tol": args.tol,
+            "maxiter": args.maxiter,
+        }
+
+        # 添加 exp 网格参数（HF 用 delta/Rp 自动选择 transformed）
+        if params is not None:
+            cfg_dict["delta"] = params["delta"]
+            cfg_dict["Rp"] = params["Rp"]
+
+        return HFSCFGeneralConfig(**cfg_dict)
+    else:
+        # DFT 配置
+        cfg_dict = {
+            "Z": args.Z,
+            "r": r,
+            "w": w,
+            "lmax": args.lmax,
+            "eigs_per_l": args.eigs_per_l,
+            "spin_mode": args.mode,
+            "xc": args.xc,
+            "eig_solver": args.solver,
+            "mix_alpha": args.mix_alpha,
+            "tol": args.tol,
+            "maxiter": args.maxiter,
+            "adapt_mixing": args.adapt,
+            "mix_alpha_min": 0.05,
+            "compute_all_l": True,
+            "compute_all_l_mode": "final",
+            "mix_kind": "density",
+        }
+
+        # 添加 exp 网格参数
+        if params is not None:
+            cfg_dict["delta"] = params["delta"]
+            cfg_dict["Rp"] = params["Rp"]
+
+        return SCFConfig(**cfg_dict)
 
 
 def run_scf(cfg, args):
     """运行 SCF 计算。"""
-    if args.xc == "VWN":
+    if args.method == "HF":
+        result = run_hf_scf(cfg)
+    elif args.xc == "VWN":
         result = run_lsda_vwn(
             cfg, verbose=args.verbose, progress_every=args.progress_every
         )
@@ -97,13 +149,17 @@ def run_scf(cfg, args):
     else:
         raise ValueError(f"不支持的 XC 泛函: {args.xc}")
 
+
     return result
 
 
-def print_results(result, args):
+def print_results(result, args, cfg=None):
     """格式化输出结果。"""
     print("\n" + "=" * 70)
-    print(f"原子计算结果 (Z={args.Z}, {args.mode}-{args.xc})")
+    if args.method == "HF":
+        print(f"原子计算结果 (Z={args.Z}, {args.hf_mode})")
+    else:
+        print(f"原子计算结果 (Z={args.Z}, {args.mode}-{args.xc})")
     print("=" * 70)
 
     # 收敛信息
@@ -111,7 +167,15 @@ def print_results(result, args):
     print(f"\n状态: {status} ({result.iterations} 轮)")
 
     # 能量
-    if result.energies:
+    if args.method == "HF":
+        # HF 结果
+        print(f"\n总能量: {result.E_total:.8f} Ha")
+        print(f"  动能: {result.E_kinetic:.8f} Ha")
+        print(f"  核吸引能: {result.E_ext:.8f} Ha")
+        print(f"  Hartree 能: {result.E_hartree:.8f} Ha")
+        print(f"  交换能: {result.E_exchange:.8f} Ha")
+    else:
+        # DFT 结果
         print(f"\n总能量: {result.energies['E_total']:.8f} Ha")
         print(f"  外势能: {result.energies['E_ext']:.8f} Ha")
         print(f"  Hartree: {result.energies['E_H']:.8f} Ha")
@@ -123,62 +187,82 @@ def print_results(result, args):
 
     # 能级（只显示束缚态，epsilon < 0）
     print("\n轨道能级（束缚态）:")
-    if args.mode == "LDA":
+
+    if args.method == "HF":
+        # HF 输出
         print(f"{'轨道':>6} {'占据':>6} {'epsilon (Ha)':>15}")
         print("-" * 32)
-    else:
-        print(f"{'轨道':>6} {'自旋':>6} {'占据':>6} {'epsilon (Ha)':>15}")
-        print("-" * 42)
 
-    # 获取占据数信息
-    occ_list = default_occupations(args.Z)
-    occ_map = {}  # (n_quantum, l, spin) -> occupation
-    for spec in occ_list:
-        n_quantum = spec.n_index + spec.l + 1
-        # 每个 (n, l) 轨道有 2l+1 个 m，每个 m 的占据为 f_per_m
-        occ_per_spin = (2 * spec.l + 1) * spec.f_per_m
-        # LSDA: 分 up/down 存储
-        if spec.spin == "up":
-            occ_map[(n_quantum, spec.l, "up")] = occ_per_spin
-        elif spec.spin == "down":
-            occ_map[(n_quantum, spec.l, "down")] = occ_per_spin
-        else:  # "both" - 均分到 up 和 down
-            occ_map[(n_quantum, spec.l, "up")] = occ_per_spin
-            occ_map[(n_quantum, spec.l, "down")] = occ_per_spin
-
-    # 收集所有 (l, sigma) 组合，按 l 排序
-    all_keys = sorted(
-        set((ang_l, sigma) for (ang_l, sigma) in result.eps_by_l_sigma.keys())
-    )
-
-    l_symbols = "spdfgh"
-
-    for ang_l, sigma in all_keys:
-        if (ang_l, sigma) in result.eps_by_l_sigma:
-            eps_arr = result.eps_by_l_sigma[(ang_l, sigma)]
+        l_symbols = "spdfgh"
+        for ang_l in sorted(result.eigenvalues_by_l.keys()):
+            eps_arr = result.eigenvalues_by_l[ang_l]
+            occ_arr = cfg.occ_by_l[ang_l] if cfg else []
             for n_idx, eps in enumerate(eps_arr):
-                # 只显示束缚态
                 if eps >= 0:
                     continue
-
                 n_quantum = n_idx + ang_l + 1
                 l_symbol = l_symbols[ang_l] if ang_l < len(l_symbols) else f"l={ang_l}"
                 orbital = f"{n_quantum}{l_symbol}"
+                occ = occ_arr[n_idx] if n_idx < len(occ_arr) else 0.0
+                print(f"{orbital:>6} {occ:6.1f} {eps:15.6f}")
+    else:
+        # DFT 输出
+        if args.mode == "LDA":
+            print(f"{'轨道':>6} {'占据':>6} {'epsilon (Ha)':>15}")
+            print("-" * 32)
+        else:
+            print(f"{'轨道':>6} {'自旋':>6} {'占据':>6} {'epsilon (Ha)':>15}")
+            print("-" * 42)
 
-                # 查找占据数
-                occupation = occ_map.get((n_quantum, ang_l, sigma), 0.0)
+        # 获取占据数信息
+        occ_list = default_occupations(args.Z)
+        occ_map = {}  # (n_quantum, l, spin) -> occupation
+        for spec in occ_list:
+            n_quantum = spec.n_index + spec.l + 1
+            # 每个 (n, l) 轨道有 2l+1 个 m，每个 m 的占据为 f_per_m
+            occ_per_spin = (2 * spec.l + 1) * spec.f_per_m
+            # LSDA: 分 up/down 存储
+            if spec.spin == "up":
+                occ_map[(n_quantum, spec.l, "up")] = occ_per_spin
+            elif spec.spin == "down":
+                occ_map[(n_quantum, spec.l, "down")] = occ_per_spin
+            else:  # "both" - 均分到 up 和 down
+                occ_map[(n_quantum, spec.l, "up")] = occ_per_spin
+                occ_map[(n_quantum, spec.l, "down")] = occ_per_spin
 
-                if args.mode == "LDA":
-                    # LDA 模式：不显示自旋，占据数翻倍（因为 up=down）
-                    if sigma == "up":  # 只显示一次
-                        total_occ = occupation * 2  # up + down
-                        print(f"{orbital:>6} {total_occ:6.1f} {eps:15.6f}")
-                else:
-                    # LSDA 模式：显示自旋和占据数
-                    spin_symbol = "↑" if sigma == "up" else "↓"
-                    print(
-                        f"{orbital:>6} {spin_symbol:>6} {occupation:6.1f} {eps:15.6f}"
-                    )
+        # 收集所有 (l, sigma) 组合，按 l 排序
+        all_keys = sorted(
+            set((ang_l, sigma) for (ang_l, sigma) in result.eps_by_l_sigma.keys())
+        )
+
+        l_symbols = "spdfgh"
+
+        for ang_l, sigma in all_keys:
+            if (ang_l, sigma) in result.eps_by_l_sigma:
+                eps_arr = result.eps_by_l_sigma[(ang_l, sigma)]
+                for n_idx, eps in enumerate(eps_arr):
+                    # 只显示束缚态
+                    if eps >= 0:
+                        continue
+
+                    n_quantum = n_idx + ang_l + 1
+                    l_symbol = l_symbols[ang_l] if ang_l < len(l_symbols) else f"l={ang_l}"
+                    orbital = f"{n_quantum}{l_symbol}"
+
+                    # 查找占据数
+                    occupation = occ_map.get((n_quantum, ang_l, sigma), 0.0)
+
+                    if args.mode == "LDA":
+                        # LDA 模式：不显示自旋，占据数翻倍（因为 up=down）
+                        if sigma == "up":  # 只显示一次
+                            total_occ = occupation * 2  # up + down
+                            print(f"{orbital:>6} {total_occ:6.1f} {eps:15.6f}")
+                    else:
+                        # LSDA 模式：显示自旋和占据数
+                        spin_symbol = "↑" if sigma == "up" else "↓"
+                        print(
+                            f"{orbital:>6} {spin_symbol:>6} {occupation:6.1f} {eps:15.6f}"
+                        )
 
     print()
 
@@ -294,14 +378,28 @@ def main():
 
     # 物理参数
     parser.add_argument(
-        "--mode", type=str, default="LSDA", choices=["LSDA", "LDA"], help="自旋模式"
+        "--method",
+        type=str,
+        default="DFT",
+        choices=["DFT", "HF"],
+        help="计算方法：DFT 或 HF"
+    )
+    parser.add_argument(
+        "--mode", type=str, default="LSDA", choices=["LSDA", "LDA"], help="自旋模式（DFT）"
     )
     parser.add_argument(
         "--xc",
         type=str,
         default="VWN",
         choices=["VWN", "PZ81", "X_ONLY"],
-        help="XC 泛函",
+        help="XC 泛函（DFT）",
+    )
+    parser.add_argument(
+        "--hf-mode",
+        type=str,
+        default="RHF",
+        choices=["RHF", "UHF"],
+        help="HF 模式（仅当 --method HF 时使用）"
     )
     parser.add_argument("--lmax", type=int, default=3, help="最大角动量")
     parser.add_argument(
@@ -393,11 +491,11 @@ def main():
     t_elapsed = time.time() - t_start
 
     # 输出结果
-    print_results(result, args)
+    print_results(result, args, cfg)
     print(f"\n⏱️  总用时: {t_elapsed:.2f}s")
 
-    # 对比参考（Z≤18 自动启用，或用户明确要求）
-    if args.Z <= 18 or args.compare_ref:
+    # 对比参考（Z≤18 自动启用，或用户明确要求，DFT 模式）
+    if args.method == "DFT" and (args.Z <= 18 or args.compare_ref):
         compare_with_ref(result, args.ref_path, args)
 
     # 导出（如果需要）

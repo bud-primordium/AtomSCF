@@ -200,6 +200,21 @@ python examples/run_atom.py \
   --rmax 150.0 \
   --tol 1e-6 \
   --no-verbose
+
+# Hartree-Fock 计算
+python examples/run_atom.py --Z 6 --method HF --hf-mode RHF --n 1000  # Carbon RHF
+python examples/run_atom.py --Z 6 --method HF --hf-mode UHF --n 1000  # Carbon UHF
+```
+
+**Carbon HF 结果对比**（n=1000 vs ROHF 参考）：
+
+| 方法 | E_total (Ha) | 1s (Ha) | 2s (Ha) | 2p (Ha) | 用时 |
+|------|-------------|---------|---------|---------|------|
+| **RHF** | -37.445 | -11.307 | -0.703 | -0.232 | 46.8s |
+| **UHF** | -37.445 | -11.308 | -0.703 | -0.232 | 51.8s |
+| **ROHF (参考)** | -37.689 | -11.326 | -0.706 | -0.433 | - |
+
+**注**：Carbon 基态为 ³P（开壳层），RHF/UHF 与 ROHF 的 2p 能级差异较大属于预期。
 ```
 
 **默认推荐配置**：
