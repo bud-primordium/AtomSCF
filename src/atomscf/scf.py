@@ -13,7 +13,11 @@ from .operator import (
     solve_bound_states_fd5_auxlinear,
     solve_bound_states_transformed,
 )
-from .numerov import numerov_eigen_log_ground, numerov_find_k_log, numerov_find_k_log_matching
+from .numerov import (
+    numerov_eigen_log_ground,
+    numerov_find_k_log,
+    numerov_find_k_log_matching,
+)
 from .occupations import OrbitalSpec, default_occupations
 from .utils import trapz, normalize_radial_u
 from .xc.lda import vx_dirac, lda_c_pz81, ex_dirac_density
@@ -35,13 +39,15 @@ def _estimate_energy_bounds(Z: int, l: int) -> tuple[float, float]:
     - 留出 50% 的安全裕度，并将上界设置为浅束缚阈值（-1e-2）。
     """
     n_min = max(l + 1, 1)
-    e_est = - (Z * Z) / (2.0 * n_min * n_min)
+    e_est = -(Z * Z) / (2.0 * n_min * n_min)
     eps_min = 1.5 * e_est  # 更深一些（更负）
     eps_max = -1e-2
     return eps_min, eps_max
 
 
-def _solve_channel(cfg: 'SCFConfig', r: np.ndarray, l: int, v: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
+def _solve_channel(
+    cfg: "SCFConfig", r: np.ndarray, l: int, v: np.ndarray, k: int
+) -> tuple[np.ndarray, np.ndarray]:
     """根据 cfg.eig_solver 选择求解器，返回 (eps, U)。
 
     - transformed：变量变换方法（需要 cfg.delta 和 cfg.Rp）
@@ -54,7 +60,9 @@ def _solve_channel(cfg: 'SCFConfig', r: np.ndarray, l: int, v: np.ndarray, k: in
     if cfg.eig_solver == "transformed":
         # 变量变换方法：需要 delta 和 Rp 参数
         if cfg.delta is None or cfg.Rp is None:
-            raise ValueError("eig_solver='transformed' 需要提供 cfg.delta 和 cfg.Rp 参数")
+            raise ValueError(
+                "eig_solver='transformed' 需要提供 cfg.delta 和 cfg.Rp 参数"
+            )
         return solve_bound_states_transformed(
             r, l=l, v_of_r=v, delta=cfg.delta, Rp=cfg.Rp, k=k, use_sparse=False
         )
@@ -64,8 +72,16 @@ def _solve_channel(cfg: 'SCFConfig', r: np.ndarray, l: int, v: np.ndarray, k: in
             eps_min, eps_max = _estimate_energy_bounds(cfg.Z, l)
             # 直接尝试取所需 k 个态，失败再整体回退到 FD
             from .numerov import numerov_find_k_log_by_nodes
+
             eps, U = numerov_find_k_log_by_nodes(
-                r, v, l, k=k, eps_min=eps_min, eps_max=eps_max, samples=120, bisection_iter=50
+                r,
+                v,
+                l,
+                k=k,
+                eps_min=eps_min,
+                eps_max=eps_max,
+                samples=120,
+                bisection_iter=50,
             )
             wloc = trapezoid_weights(r)
             for j in range(U.shape[0]):
@@ -118,6 +134,8 @@ class SCFConfig:
         占据方案；若为 ``None`` 则使用 :func:`default_occupations`。
     eigs_per_l : int
         每个 :math:`\ell` 通道求解的最低本征态数量（需覆盖所有占据的 :math:`n`）。
+    spin_mode : str
+        自旋处理模式："LSDA"（自旋极化，默认）或 "LDA"（自旋非极化，强制 :math:`n_\uparrow = n_\downarrow`）。
     """
 
     Z: int
@@ -142,6 +160,15 @@ class SCFConfig:
     # 变量变换方法所需参数（仅当 eig_solver="transformed" 时需要）
     delta: float | None = None  # 网格参数 δ（从 radial_grid_exp_transformed 获取）
     Rp: float | None = None  # 网格参数 R_p（从 radial_grid_exp_transformed 获取）
+    # 自旋处理模式："LSDA"（自旋极化）或 "LDA"（自旋非极化）
+    spin_mode: str = "LSDA"
+
+    def __post_init__(self):
+        """参数验证。"""
+        if self.spin_mode not in ("LSDA", "LDA"):
+            raise ValueError(
+                f"spin_mode 必须为 'LSDA' 或 'LDA'，当前值: {self.spin_mode}"
+            )
 
 
 @dataclass
@@ -209,7 +236,9 @@ def _build_effective_potential_pz81(
     return v_ext + vH + vx_up + vc_up, v_ext + vH + vx_dn + vc_dn, vH, vx_up, vx_dn
 
 
-def _init_guess_density(Z: int, r: np.ndarray, w: np.ndarray, occ: list[OrbitalSpec]) -> tuple[np.ndarray, np.ndarray]:
+def _init_guess_density(
+    Z: int, r: np.ndarray, w: np.ndarray, occ: list[OrbitalSpec]
+) -> tuple[np.ndarray, np.ndarray]:
     r"""用外势 :math:`v_{\text{ext}}`（不含相互作用）波函数作为初猜密度。"""
     # 求解在纯库仑外势下的径向态（每个 l、两自旋势相同）
     v_ext = -float(Z) / np.maximum(r, 1e-12)
@@ -224,7 +253,10 @@ def _init_guess_density(Z: int, r: np.ndarray, w: np.ndarray, occ: list[OrbitalS
 
     cache_e: dict[int, np.ndarray] = {}
     cache_u: dict[int, np.ndarray] = {}
-    for l, max_n in {l: max(n for (l2, _), n in need.items() if l2 == l) for l in set(l for l, _ in need.keys())}.items():
+    for l, max_n in {
+        l: max(n for (l2, _), n in need.items() if l2 == l)
+        for l in set(l for l, _ in need.keys())
+    }.items():
         eps, U = solve_bound_states_fd(r, l=l, v_of_r=v_ext, k=max(max_n + 1, 1))
         cache_e[l] = eps
         cache_u[l] = U
@@ -242,7 +274,9 @@ def _init_guess_density(Z: int, r: np.ndarray, w: np.ndarray, occ: list[OrbitalS
     return n_up, n_dn
 
 
-def run_lsda_x_only(cfg: SCFConfig, verbose: bool = False, progress_every: int = 10) -> SCFResult:
+def run_lsda_x_only(
+    cfg: SCFConfig, verbose: bool = False, progress_every: int = 10
+) -> SCFResult:
     r"""运行 LSDA X-only 的自洽场计算（球对称、径向）。
 
     Parameters
@@ -328,8 +362,16 @@ def run_lsda_x_only(cfg: SCFConfig, verbose: bool = False, progress_every: int =
             n_up_mixed = n_up_out
             n_dn_mixed = n_dn_out
 
+        # LDA 模式：强制自旋非极化（n_up = n_dn = n_total/2）
+        if cfg.spin_mode == "LDA":
+            n_total = n_up_mixed + n_dn_mixed
+            n_up_mixed = n_total / 2.0
+            n_dn_mixed = n_total / 2.0
+
         # 收敛判断（密度无穷范数 + 电子数守恒）
-        dn_inf = max(np.max(np.abs(n_up_mixed - n_up)), np.max(np.abs(n_dn_mixed - n_dn)))
+        dn_inf = max(
+            np.max(np.abs(n_up_mixed - n_up)), np.max(np.abs(n_dn_mixed - n_dn))
+        )
 
         # 更新状态
         n_up, n_dn = n_up_mixed, n_dn_mixed
@@ -357,7 +399,7 @@ def run_lsda_x_only(cfg: SCFConfig, verbose: bool = False, progress_every: int =
 
     # 电子数守恒检查（便于测试）
     n_tot = n_up + n_dn
-    Ne = 4.0 * np.pi * trapz(n_tot * (r ** 2), r, w)
+    Ne = 4.0 * np.pi * trapz(n_tot * (r**2), r, w)
     _ = Ne  # 未直接返回，但用于测试断言
 
     # 最终势
@@ -379,7 +421,9 @@ def run_lsda_x_only(cfg: SCFConfig, verbose: bool = False, progress_every: int =
     )
 
 
-def run_lsda_pz81(cfg: SCFConfig, verbose: bool = False, progress_every: int = 10) -> SCFResult:
+def run_lsda_pz81(
+    cfg: SCFConfig, verbose: bool = False, progress_every: int = 10
+) -> SCFResult:
     r"""运行 LSDA（Dirac 交换 + PZ81 关联）的自洽场计算，并给出能量分解。"""
     r, w = cfg.r, cfg.w
     if cfg.occ is None:
@@ -443,7 +487,16 @@ def run_lsda_pz81(cfg: SCFConfig, verbose: bool = False, progress_every: int = 1
         else:
             n_up_mixed = n_up_out
             n_dn_mixed = n_dn_out
-        dn_inf = max(np.max(np.abs(n_up_mixed - n_up)), np.max(np.abs(n_dn_mixed - n_dn)))
+
+        # LDA 模式：强制自旋非极化（n_up = n_dn = n_total/2）
+        if cfg.spin_mode == "LDA":
+            n_total = n_up_mixed + n_dn_mixed
+            n_up_mixed = n_total / 2.0
+            n_dn_mixed = n_total / 2.0
+
+        dn_inf = max(
+            np.max(np.abs(n_up_mixed - n_up)), np.max(np.abs(n_dn_mixed - n_dn))
+        )
         n_up, n_dn = n_up_mixed, n_dn_mixed
         eps_by_l_sigma = new_eps_by_l_sigma
         u_by_l_sigma = new_u_by_l_sigma
@@ -466,7 +519,9 @@ def run_lsda_pz81(cfg: SCFConfig, verbose: bool = False, progress_every: int = 1
         prev_v_up, prev_v_dn = v_up, v_dn
 
     # 势与分量
-    v_up, v_dn, vH, vX_up, vX_dn = _build_effective_potential_pz81(cfg.Z, r, n_up, n_dn, w)
+    v_up, v_dn, vH, vX_up, vX_dn = _build_effective_potential_pz81(
+        cfg.Z, r, n_up, n_dn, w
+    )
     v_ext = -float(cfg.Z) / np.maximum(r, 1e-12)
     vc_up = v_up - (v_ext + vH + vX_up)
     vc_dn = v_dn - (v_ext + vH + vX_dn)
@@ -475,7 +530,7 @@ def run_lsda_pz81(cfg: SCFConfig, verbose: bool = False, progress_every: int = 1
     n_tot = n_up + n_dn
     r2 = r * r
     e_sum = 0.0
-    for spec in (cfg.occ or default_occupations(cfg.Z)):
+    for spec in cfg.occ or default_occupations(cfg.Z):
         eps_l_sigma = eps_by_l_sigma[(spec.l, spec.spin)][spec.n_index]
         e_sum += (2 * spec.l + 1) * spec.f_per_m * float(eps_l_sigma)
     E_H = 0.5 * 4.0 * np.pi * trapz(n_tot * vH * r2, r, w)
@@ -484,16 +539,50 @@ def run_lsda_pz81(cfg: SCFConfig, verbose: bool = False, progress_every: int = 1
     E_x = 4.0 * np.pi * trapz(e_x * r2, r, w)
     E_c = 4.0 * np.pi * trapz(e_c * r2, r, w)
     E_ext = 4.0 * np.pi * trapz(n_tot * v_ext * r2, r, w)
-    E_xc_dc = 4.0 * np.pi * trapz((vX_up * n_up + vX_dn * n_dn + vc_up * n_up + vc_dn * n_dn) * r2, r, w)
+    E_xc_dc = (
+        4.0
+        * np.pi
+        * trapz((vX_up * n_up + vX_dn * n_dn + vc_up * n_up + vc_dn * n_dn) * r2, r, w)
+    )
     E_tot = e_sum - E_H - E_xc_dc + (E_x + E_c)
     # 计算 Kohn–Sham 动能 T_s = sum eps_i - ∫ n (v_ext + v_H + v_x + v_c) dr
-    int_n_v = 4.0 * np.pi * trapz((n_tot * (v_ext + vH + vX_up * (n_up / n_tot + 0.0) + vX_dn * (n_dn / n_tot + 0.0) + vc_up * (n_up / n_tot + 0.0) + vc_dn * (n_dn / n_tot + 0.0))) * r2, r, w) if np.all(n_tot>0) else 4.0 * np.pi * trapz(n_tot * (v_ext + vH) * r2, r, w)
+    int_n_v = (
+        4.0
+        * np.pi
+        * trapz(
+            (
+                n_tot
+                * (
+                    v_ext
+                    + vH
+                    + vX_up * (n_up / n_tot + 0.0)
+                    + vX_dn * (n_dn / n_tot + 0.0)
+                    + vc_up * (n_up / n_tot + 0.0)
+                    + vc_dn * (n_dn / n_tot + 0.0)
+                )
+            )
+            * r2,
+            r,
+            w,
+        )
+        if np.all(n_tot > 0)
+        else 4.0 * np.pi * trapz(n_tot * (v_ext + vH) * r2, r, w)
+    )
     # 更稳健地拆分：∫ n v_x = ∫ (n_up v_x_up + n_dn v_x_dn)，相关同理
     int_n_vx = 4.0 * np.pi * trapz((n_up * vX_up + n_dn * vX_dn) * r2, r, w)
     int_n_vc = 4.0 * np.pi * trapz((n_up * vc_up + n_dn * vc_dn) * r2, r, w)
     int_n_v = 4.0 * np.pi * trapz(n_tot * (v_ext + vH) * r2, r, w) + int_n_vx + int_n_vc
     T_s = e_sum - int_n_v
-    energies = dict(E_total=E_tot, E_H=E_H, E_x=E_x, E_c=E_c, E_ext=E_ext, E_sum=e_sum, E_kin=T_s, E_coul=E_H)
+    energies = dict(
+        E_total=E_tot,
+        E_H=E_H,
+        E_x=E_x,
+        E_c=E_c,
+        E_ext=E_ext,
+        E_sum=e_sum,
+        E_kin=T_s,
+        E_coul=E_H,
+    )
 
     # 若仅在收敛后补齐全部通道，则此处再求一遍所有 (l,spin) 的低能态
     if cfg.compute_all_l and cfg.compute_all_l_mode == "final":
@@ -525,7 +614,9 @@ def run_lsda_pz81(cfg: SCFConfig, verbose: bool = False, progress_every: int = 1
     )
 
 
-def run_lsda_vwn(cfg: SCFConfig, verbose: bool = False, progress_every: int = 10) -> SCFResult:
+def run_lsda_vwn(
+    cfg: SCFConfig, verbose: bool = False, progress_every: int = 10
+) -> SCFResult:
     r"""运行 LSDA（Dirac 交换 + VWN 关联）的自洽场计算，并给出能量分解。"""
     r, w = cfg.r, cfg.w
     if cfg.occ is None:
@@ -543,7 +634,9 @@ def run_lsda_vwn(cfg: SCFConfig, verbose: bool = False, progress_every: int = 10
     prev_dn_inf = None
     worsen_count = 0
     for it in range(1, cfg.maxiter + 1):
-        v_up, v_dn, vH, vX_up, vX_dn = _build_effective_potential_vwn(cfg.Z, r, n_up, n_dn, w)
+        v_up, v_dn, vH, vX_up, vX_dn = _build_effective_potential_vwn(
+            cfg.Z, r, n_up, n_dn, w
+        )
         if cfg.mix_kind == "potential" and prev_v_up is not None:
             v_up = (1.0 - cfg.mix_alpha) * prev_v_up + cfg.mix_alpha * v_up
             v_dn = (1.0 - cfg.mix_alpha) * prev_v_dn + cfg.mix_alpha * v_dn
@@ -583,7 +676,16 @@ def run_lsda_vwn(cfg: SCFConfig, verbose: bool = False, progress_every: int = 10
         else:
             n_up_mixed = n_up_out
             n_dn_mixed = n_dn_out
-        dn_inf = max(np.max(np.abs(n_up_mixed - n_up)), np.max(np.abs(n_dn_mixed - n_dn)))
+
+        # LDA 模式：强制自旋非极化（n_up = n_dn = n_total/2）
+        if cfg.spin_mode == "LDA":
+            n_total = n_up_mixed + n_dn_mixed
+            n_up_mixed = n_total / 2.0
+            n_dn_mixed = n_total / 2.0
+
+        dn_inf = max(
+            np.max(np.abs(n_up_mixed - n_up)), np.max(np.abs(n_dn_mixed - n_dn))
+        )
         n_up, n_dn = n_up_mixed, n_dn_mixed
         eps_by_l_sigma = new_eps_by_l_sigma
         u_by_l_sigma = new_u_by_l_sigma
@@ -605,7 +707,9 @@ def run_lsda_vwn(cfg: SCFConfig, verbose: bool = False, progress_every: int = 10
             break
         prev_v_up, prev_v_dn = v_up, v_dn
 
-    v_up, v_dn, vH, vX_up, vX_dn = _build_effective_potential_vwn(cfg.Z, r, n_up, n_dn, w)
+    v_up, v_dn, vH, vX_up, vX_dn = _build_effective_potential_vwn(
+        cfg.Z, r, n_up, n_dn, w
+    )
     v_ext = -float(cfg.Z) / np.maximum(r, 1e-12)
     vc_up = v_up - (v_ext + vH + vX_up)
     vc_dn = v_dn - (v_ext + vH + vX_dn)
@@ -613,7 +717,7 @@ def run_lsda_vwn(cfg: SCFConfig, verbose: bool = False, progress_every: int = 10
     n_tot = n_up + n_dn
     r2 = r * r
     e_sum = 0.0
-    for spec in (cfg.occ or default_occupations(cfg.Z)):
+    for spec in cfg.occ or default_occupations(cfg.Z):
         eps_l_sigma = eps_by_l_sigma[(spec.l, spec.spin)][spec.n_index]
         e_sum += (2 * spec.l + 1) * spec.f_per_m * float(eps_l_sigma)
     E_H = 0.5 * 4.0 * np.pi * trapz(n_tot * vH * r2, r, w)
@@ -622,14 +726,27 @@ def run_lsda_vwn(cfg: SCFConfig, verbose: bool = False, progress_every: int = 10
     E_x = 4.0 * np.pi * trapz(e_x * r2, r, w)
     E_c = 4.0 * np.pi * trapz(e_c * r2, r, w)
     E_ext = 4.0 * np.pi * trapz(n_tot * v_ext * r2, r, w)
-    E_xc_dc = 4.0 * np.pi * trapz((vX_up * n_up + vX_dn * n_dn + vc_up * n_up + vc_dn * n_dn) * r2, r, w)
+    E_xc_dc = (
+        4.0
+        * np.pi
+        * trapz((vX_up * n_up + vX_dn * n_dn + vc_up * n_up + vc_dn * n_dn) * r2, r, w)
+    )
     E_tot = e_sum - E_H - E_xc_dc + (E_x + E_c)
     # 计算 Kohn–Sham 动能 T_s
     int_n_vx = 4.0 * np.pi * trapz((n_up * vX_up + n_dn * vX_dn) * r2, r, w)
     int_n_vc = 4.0 * np.pi * trapz((n_up * vc_up + n_dn * vc_dn) * r2, r, w)
     int_n_v = 4.0 * np.pi * trapz(n_tot * (v_ext + vH) * r2, r, w) + int_n_vx + int_n_vc
     T_s = e_sum - int_n_v
-    energies = dict(E_total=E_tot, E_H=E_H, E_x=E_x, E_c=E_c, E_ext=E_ext, E_sum=e_sum, E_kin=T_s, E_coul=E_H)
+    energies = dict(
+        E_total=E_tot,
+        E_H=E_H,
+        E_x=E_x,
+        E_c=E_c,
+        E_ext=E_ext,
+        E_sum=e_sum,
+        E_kin=T_s,
+        E_coul=E_H,
+    )
 
     # 收敛后补齐所有通道
     if cfg.compute_all_l and cfg.compute_all_l_mode == "final":
