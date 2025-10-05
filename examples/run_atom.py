@@ -342,6 +342,7 @@ def main():
     parser.add_argument(
         "--compare-ref",
         action="store_true",
+        default=True,
         help="对比 NIST 参考数据（Z<=18 自动使用内嵌数据）",
     )
     parser.add_argument(
@@ -386,10 +387,14 @@ def main():
     cfg = build_config(args, r, w, params)
 
     # 运行 SCF
+    import time
+    t_start = time.time()
     result = run_scf(cfg, args)
+    t_elapsed = time.time() - t_start
 
     # 输出结果
     print_results(result, args)
+    print(f"\n⏱️  总用时: {t_elapsed:.2f}s")
 
     # 对比参考（Z≤18 自动启用，或用户明确要求）
     if args.Z <= 18 or args.compare_ref:

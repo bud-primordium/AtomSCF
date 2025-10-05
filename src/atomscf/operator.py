@@ -547,58 +547,132 @@ def solve_bound_states_transformed(
 
     # 构造 Hamiltonian 矩阵 H 和质量矩阵 B
     # 参考 problem_2.tex 第155-183行
-    if use_sparse:
-        from scipy.sparse import diags
 
-        # H 矩阵的对角元素
-        diag_H = np.zeros(n_reduced)
+    # 规模阈值：实际禁用稀疏（密集+白化已足够快）
+    # 稀疏求解器（ARPACK eigsh）对该问题收敛极慢，即使白化后仍不如密集
+    use_sparse_actual = use_sparse and (n_reduced > 10000)
+
+    if use_sparse_actual:
+        from scipy.sparse import diags
+        from scipy.sparse.linalg import eigsh
+        from scipy.sparse import csr_matrix
+        import numpy as _np
+        import os
+        import time as _time
+
+        debug_solver = os.environ.get("ATOMSCF_DEBUG_SOLVER", "0") == "1"
+
+        # 组装 H 的对角（三对角 Off=-1）
+        diag_H = _np.zeros(n_reduced)
         for i in range(n_reduced):
-            j_actual = i + 1  # 实际网格索引
-            exp_factor = 2.0 * delta**2 * Rp**2 * np.exp(2.0 * delta * j_actual)
+            j_actual = i + 1  # 实际网格索引（跳过 j=0）
+            exp_factor = 2.0 * delta**2 * Rp**2 * _np.exp(2.0 * delta * j_actual)
             diag_H[i] = 2.0 + delta**2 / 4.0 + exp_factor * V_eff[j_actual]
 
-        # H 的三对角结构
-        H = diags(
-            [np.full(n_reduced - 1, -1.0), diag_H, np.full(n_reduced - 1, -1.0)],
-            offsets=[-1, 0, 1],
-            shape=(n_reduced, n_reduced),
-            format="csr",
-        )
-
-        # B 矩阵（对角）
-        diag_B = np.zeros(n_reduced)
+        # B 的对角
+        diag_B = _np.zeros(n_reduced)
         for i in range(n_reduced):
             j_actual = i + 1
-            diag_B[i] = 2.0 * delta**2 * Rp**2 * np.exp(2.0 * delta * j_actual)
+            diag_B[i] = 2.0 * delta**2 * Rp**2 * _np.exp(2.0 * delta * j_actual)
 
-        B = diags([diag_B], offsets=[0], shape=(n_reduced, n_reduced), format="csr")
+        # 标准化白化：C = B^{-1/2} H B^{-1/2}（保持三对角）
+        inv_sqrt_B = 1.0 / _np.sqrt(_np.maximum(diag_B, 1e-300))
+        # C 主对角
+        diag_C = diag_H * (inv_sqrt_B ** 2)
+        # C 上/下对角：-inv[i]*inv[i+1]
+        off_C = -inv_sqrt_B[:-1] * inv_sqrt_B[1:]
 
-        # 求解广义特征值问题 H v = E B v
+        C = diags([off_C, diag_C, off_C], offsets=[-1, 0, 1], shape=(n_reduced, n_reduced), format="csr")
+
+        # eigsh 参数（放宽以提高收敛性）
+        # 对于 n>2000 的大网格，优先保证收敛而非极致精度
         k_actual = min(k, n_reduced)
-        e_vals, V_inner = eigsh(H, k=k_actual, M=B, which="SA")
+        # ncv 需要足够大：至少 4k+10，对大矩阵用 min(8k, 100)
+        ncv = min(max(8 * k_actual, 60), n_reduced - 1, 150)
+        tol = 1e-7  # 放宽容差
+        maxiter = 3000  # 允许更多迭代
+
+        if debug_solver:
+            print(f"    [DEBUG] l={l}, n_reduced={n_reduced}, k={k_actual}, ncv={ncv}, 开始 eigsh...")
+            t0 = _time.time()
+
+        try:
+            e_vals, Y = eigsh(C, k=k_actual, which="SA", ncv=ncv, tol=tol, maxiter=maxiter)
+            if debug_solver:
+                print(f"    [DEBUG] eigsh 成功，用时 {_time.time()-t0:.4f}s")
+        except Exception as e1:
+            # 重试：进一步放宽参数
+            if debug_solver:
+                print(f"    [DEBUG] 首次 eigsh 失败: {e1}, 尝试重试...")
+            try:
+                ncv2 = min(max(10 * k_actual, 100), n_reduced - 1, 200)
+                if debug_solver:
+                    t1 = _time.time()
+                e_vals, Y = eigsh(C, k=k_actual, which="SA", ncv=ncv2, tol=1e-6, maxiter=5000)
+                if debug_solver:
+                    print(f"    [DEBUG] 重试成功（ncv={ncv2}），用时 {_time.time()-t1:.4f}s")
+            except Exception as e2:
+                # 稀疏失败：回退到密集广义特征值
+                if debug_solver:
+                    print(f"    [DEBUG] 重试失败: {e2}, 回退到密集求解...")
+                    t2 = _time.time()
+                H = _np.zeros((n_reduced, n_reduced), dtype=float)
+                B = _np.zeros((n_reduced, n_reduced), dtype=float)
+                for i in range(n_reduced):
+                    if i > 0:
+                        H[i, i - 1] = -1.0
+                    H[i, i] = diag_H[i]
+                    if i < n_reduced - 1:
+                        H[i, i + 1] = -1.0
+                    B[i, i] = diag_B[i]
+                from scipy.linalg import eigh as _eigh
+                e_vals, V_inner = _eigh(H, B, subset_by_index=(0, k_actual - 1))
+                if debug_solver:
+                    print(f"    [DEBUG] 密集求解成功，用时 {_time.time()-t2:.4f}s")
+                # 归一化到 v 空间（密集回退已经是 v）
+                Y = V_inner
+
+        # 将 y 变回 v：v = B^{-1/2} y
+        if Y.ndim == 1:
+            Y = Y[:, None]
+        V_inner = (inv_sqrt_B[:, None] * Y)
 
     else:
-        # 密集矩阵求解
-        H = np.zeros((n_reduced, n_reduced), dtype=float)
-        B = np.zeros((n_reduced, n_reduced), dtype=float)
+        # 密集矩阵求解（也使用白化避免病态）
+        import numpy as _np
 
+        # 组装 diag_H 与 diag_B
+        diag_H = _np.zeros(n_reduced)
+        diag_B = _np.zeros(n_reduced)
         for i in range(n_reduced):
             j_actual = i + 1
-            exp_factor = 2.0 * delta**2 * Rp**2 * np.exp(2.0 * delta * j_actual)
+            exp_factor = 2.0 * delta**2 * Rp**2 * _np.exp(2.0 * delta * j_actual)
+            diag_H[i] = 2.0 + delta**2 / 4.0 + exp_factor * V_eff[j_actual]
+            diag_B[i] = exp_factor
 
-            # H 矩阵
+        # 白化：C = B^{-1/2} H B^{-1/2}（保持三对角）
+        inv_sqrt_B = 1.0 / _np.sqrt(_np.maximum(diag_B, 1e-300))
+        diag_C = diag_H * (inv_sqrt_B ** 2)
+        off_C = -inv_sqrt_B[:-1] * inv_sqrt_B[1:]
+
+        # 构建密集三对角矩阵 C
+        C = _np.zeros((n_reduced, n_reduced), dtype=float)
+        for i in range(n_reduced):
             if i > 0:
-                H[i, i - 1] = -1.0
-            H[i, i] = 2.0 + delta**2 / 4.0 + exp_factor * V_eff[j_actual]
+                C[i, i-1] = off_C[i-1]
+            C[i, i] = diag_C[i]
             if i < n_reduced - 1:
-                H[i, i + 1] = -1.0
+                C[i, i+1] = off_C[i]
 
-            # B 矩阵
-            B[i, i] = 2.0 * delta**2 * Rp**2 * np.exp(2.0 * delta * j_actual)
-
-        # 求解
+        # 求解标准特征值问题 C y = E y
         k_actual = min(k, n_reduced)
-        e_vals, V_inner = eigh(H, B, subset_by_index=(0, k_actual - 1))
+        from scipy.linalg import eigh as _eigh
+        e_vals, Y = _eigh(C, subset_by_index=(0, k_actual - 1))
+
+        # 将 y 变回 v：v = B^{-1/2} y
+        if Y.ndim == 1:
+            Y = Y[:, None]
+        V_inner = (inv_sqrt_B[:, None] * Y)
 
     # 变换回 u = v * exp(j*delta/2)
     eps = e_vals
@@ -703,4 +777,3 @@ def build_transformed_hamiltonian(
         B[i, i] = 2.0 * delta**2 * Rp**2 * np.exp(2.0 * delta * j_actual)
 
     return H, B, r_inner
-

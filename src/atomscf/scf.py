@@ -64,7 +64,7 @@ def _solve_channel(
                 "eig_solver='transformed' 需要提供 cfg.delta 和 cfg.Rp 参数"
             )
         return solve_bound_states_transformed(
-            r, l=l, v_of_r=v, delta=cfg.delta, Rp=cfg.Rp, k=k, use_sparse=False
+            r, l=l, v_of_r=v, delta=cfg.delta, Rp=cfg.Rp, k=k, use_sparse=True
         )
     if cfg.eig_solver == "numerov":
         try:
