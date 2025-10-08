@@ -17,6 +17,7 @@
 from atomscf.grid import radial_grid_linear, radial_grid_log, trapezoid_weights
 from atomscf.operator import radial_hamiltonian_matrix, solve_bound_states_fd
 from atomscf.utils import trapz, normalize_radial_u
+from atomscf.shooting import shooting_refine_energy
 
 __all__ = [
     "radial_grid_linear",
@@ -26,6 +27,7 @@ __all__ = [
     "solve_bound_states_fd",
     "trapz",
     "normalize_radial_u",
+    "shooting_refine_energy",
 ]
 
 __version__ = "0.1.0"

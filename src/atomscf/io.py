@@ -13,6 +13,7 @@ __all__ = [
     "export_wavefunctions_csv",
     "export_energies_json",
     "export_for_ppgen",
+    "resample_wavefunction",
 ]
 
 
@@ -201,3 +202,47 @@ def export_for_ppgen(
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
+def resample_wavefunction(
+    r_orig: np.ndarray,
+    u_orig: np.ndarray,
+    method: str = 'uniform',
+    n_points: int = 200,
+):
+    """波函数重采样工具。
+
+    Parameters
+    ----------
+    r_orig : np.ndarray
+        原始径向网格（严格递增）
+    u_orig : np.ndarray
+        对应的径向波函数 u(r)
+    method : {'uniform','log'}
+        - uniform: 在 [r_min, r_max] 线性等距采样
+        - log: 在对数尺度等距采样（避免 r=0，对 r_min 加入微小偏移）
+    n_points : int
+        目标采样点数
+
+    Returns
+    -------
+    r_new, u_new : (np.ndarray, np.ndarray)
+        重采样后的网格与波函数
+    """
+    r_min = float(r_orig[0])
+    r_max = float(r_orig[-1])
+    if method == 'uniform':
+        r_new = np.linspace(r_min, r_max, int(n_points))
+    elif method == 'log':
+        eps = 1e-12
+        r_new = np.exp(np.linspace(np.log(r_min + eps), np.log(r_max), int(n_points)))
+    else:
+        raise ValueError(f"不支持的重采样方法: {method}")
+
+    try:
+        from scipy.interpolate import CubicSpline
+        cs = CubicSpline(r_orig, u_orig)
+        u_new = cs(r_new)
+    except Exception:
+        # 退化到线性插值
+        u_new = np.interp(r_new, r_orig, u_orig)
+
+    return r_new, u_new

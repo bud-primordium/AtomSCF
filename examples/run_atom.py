@@ -7,6 +7,7 @@
 import argparse
 import sys
 import json
+from typing import Dict, Tuple
 from pathlib import Path
 
 # 添加 src 到路径
@@ -20,6 +21,8 @@ from atomscf.grid import (
 from atomscf.scf import SCFConfig, run_lsda_vwn, run_lsda_pz81, run_lsda_x_only
 from atomscf.scf_hf import run_hf_scf, HFSCFGeneralConfig
 from atomscf.refdata import load_nist_reference, load_nist_lsd
+import numpy as np
+
 from atomscf.io import export_for_ppgen
 from atomscf.occupations import default_occupations
 
@@ -126,6 +129,12 @@ def build_config(args, r, w, params=None):
         if params is not None:
             cfg_dict["delta"] = params["delta"]
             cfg_dict["Rp"] = params["Rp"]
+        # Numerov 可选参数
+        if args.solver == "numerov":
+            if getattr(args, "numerov_samples", None) is not None:
+                cfg_dict["numerov_samples"] = args.numerov_samples
+            if getattr(args, "numerov_bisection_iter", None) is not None:
+                cfg_dict["numerov_bisection_iter"] = args.numerov_bisection_iter
 
         return SCFConfig(**cfg_dict)
 
@@ -335,34 +344,224 @@ def compare_with_ref(result, ref_path, args):
                 print(f"{label:>8} {ref_eps:15.8f} {calc_eps:15.8f} {err:12.3e}")
 
 
-def export_results(result, export_path, args):
-    """导出结果到 JSON。"""
+def export_results(result, export_path, args, cfg=None):
+    """导出结果到 JSON（兼容 DFT/HF；增强波函数采样与自旋标注）。"""
+
+    def _extract_hf_energies(hf_result):
+        """从 HF 结果对象中提取能量字典（HFSCFGeneralResult 无 energies 属性）。"""
+        energies = {}
+        if hasattr(hf_result, 'E_total'):
+            energies['E_total'] = float(hf_result.E_total)
+        if hasattr(hf_result, 'E_kinetic'):
+            energies['E_kin'] = float(hf_result.E_kinetic)
+        if hasattr(hf_result, 'E_ext'):
+            energies['E_ext'] = float(hf_result.E_ext)
+        if hasattr(hf_result, 'E_hartree'):
+            energies['E_H'] = float(hf_result.E_hartree)
+        if hasattr(hf_result, 'E_exchange'):
+            energies['E_x'] = float(hf_result.E_exchange)
+        return energies
+
+    def _build_occ_map(Z: int) -> Dict[Tuple[int, int, str], float]:
+        """构建占据查找表: key=(n_quantum, l, spin)->(2l+1)f_per_m。"""
+        occ_list = default_occupations(Z)
+        m = {}
+        for spec in occ_list:
+            n_quantum = spec.n_index + spec.l + 1
+            m[(n_quantum, spec.l, spec.spin)] = (2 * spec.l + 1) * spec.f_per_m
+        return m
+
+    def _determine_majority_spin(eps_by_l_sigma: Dict[Tuple[int, str], np.ndarray],
+                                 l: int, n_idx: int, sigma: str,
+                                 occ_map: Dict[Tuple[int, int, str], float]) -> str:
+        """判定同一 (n,l) 的多数/少数自旋。
+
+        返回 'majority'/'minority'/'unknown'。
+        规则：
+        - 若该 (n,l) 同时存在 up/down 能量，能量更负者为 majority
+        - 若仅一自旋存在，按占据数较大者为 majority；占据数相等返回 unknown
+        """
+        other = 'down' if sigma == 'up' else 'up'
+        key_this = (l, sigma)
+        key_other = (l, other)
+        n_quantum = n_idx + l + 1
+        if key_this in eps_by_l_sigma and key_other in eps_by_l_sigma and \
+           n_idx < len(eps_by_l_sigma[key_this]) and n_idx < len(eps_by_l_sigma[key_other]):
+            e_this = float(eps_by_l_sigma[key_this][n_idx])
+            e_other = float(eps_by_l_sigma[key_other][n_idx])
+            if e_this < e_other:
+                return 'majority'
+            elif e_this > e_other:
+                return 'minority'
+            else:
+                return 'unknown'
+        # 回退：按占据数
+        occ_this = occ_map.get((n_quantum, l, sigma), 0.0)
+        occ_other = occ_map.get((n_quantum, l, other), 0.0)
+        if occ_this > occ_other:
+            return 'majority'
+        if occ_this < occ_other:
+            return 'minority'
+        return 'unknown'
+
     export_path = Path(export_path)
     export_path.parent.mkdir(parents=True, exist_ok=True)
 
-    data = {
-        "metadata": {
-            "Z": args.Z,
-            "mode": args.mode,
-            "xc": args.xc,
-            "solver": args.solver,
-            "grid": args.grid,
-            "converged": result.converged,
-            "iterations": result.iterations,
-        },
-        "energies": result.energies,
-        "levels": {},
+    # 元数据签名（网格/求解器/SCF 配置）
+    grid_sig = {
+        'type': args.grid,
+        'n': args.n,
+        'rmin': args.rmin,
+        'rmax': args.rmax,
+        'total_span': args.total_span if args.grid == 'exp' else None,
+    }
+    if args.method == 'DFT':
+        solver_sig = {
+            'type': args.solver,
+            'eigs_per_l': args.eigs_per_l,
+            'lmax': args.lmax,
+        }
+    else:
+        # HF: 是否使用变量变换由 delta/Rp 是否存在决定
+        # run_atom.py 构建 HF 配置时，exp 网格会注入 delta/Rp
+        # 这里无法直接访问 cfg，只给出近似签名
+        solver_sig = {
+            'type': 'transformed' if args.grid == 'exp' else 'fd',
+        }
+
+    scf_cfg = {
+        'tol': args.tol,
+        'maxiter': args.maxiter,
+        'mix_alpha': args.mix_alpha,
     }
 
-    # 导出能级
-    for (l, sigma), eps_arr in result.eps_by_l_sigma.items():
-        for n_idx, eps in enumerate(eps_arr):
-            n_quantum = n_idx + l + 1
-            key = f"{n_quantum}{'spdfgh'[l]}{sigma[0]}"
-            data["levels"][key] = float(eps)
+    # 能量字典（DFT 直接使用；HF 需提取）
+    energies = getattr(result, 'energies', None)
+    if energies is None:
+        energies = _extract_hf_energies(result)
 
-    with open(export_path, "w") as f:
-        json.dump(data, f, indent=2)
+    data = {
+        'metadata': {
+            'Z': args.Z,
+            'method': args.method,
+            'mode': (args.mode if args.method == 'DFT' else args.hf_mode),
+            'xc': (args.xc if args.method == 'DFT' else None),
+            'grid_signature': grid_sig,
+            'solver_signature': solver_sig,
+            'scf_config': scf_cfg,
+            'converged': bool(getattr(result, 'converged', False)),
+            'iterations': int(getattr(result, 'iterations', 0)),
+        },
+        'energies': energies,
+        'levels': {},
+        'wavefunctions': {},
+    }
+
+    l_symbols = 'spdfgh'
+    occ_map = _build_occ_map(args.Z)
+
+    # 能级导出 + 自旋标注
+    if args.method == 'DFT':
+        for (l, sigma), eps_arr in getattr(result, 'eps_by_l_sigma', {}).items():
+            for n_idx, eps in enumerate(eps_arr):
+                n_quantum = n_idx + l + 1
+                key = f"{n_quantum}{l_symbols[l]}_{sigma}"
+                spin_type = _determine_majority_spin(result.eps_by_l_sigma, l, n_idx, sigma, occ_map)
+                nist_label = ('D' if spin_type == 'majority' else ('u' if spin_type == 'minority' else None))
+                occ_val = float(occ_map.get((n_quantum, l, sigma), 0.0))
+                data['levels'][key] = {
+                    'value': float(eps),
+                    'spin': sigma,
+                    'spin_type': spin_type,
+                    'occupation': occ_val,
+                    'nist_label': nist_label,
+                }
+    else:
+        # HF: RHF/UHF 分支
+        if getattr(result, 'spin_mode', 'RHF') == 'UHF' and getattr(result, 'eigenvalues_by_l_spin', None) is not None:
+            eps_dict = result.eigenvalues_by_l_spin
+            # 构造类似结构以复用多数/少数判定
+            for (l, sigma), eps_arr in eps_dict.items():
+                for n_idx, eps in enumerate(eps_arr):
+                    n_quantum = n_idx + l + 1
+                    key = f"{n_quantum}{l_symbols[l]}_{sigma}"
+                    spin_type = 'unknown'
+                    # UHF 情形可以通过能量比较判定
+                    try:
+                        spin_type = _determine_majority_spin(eps_dict, l, n_idx, sigma, occ_map)
+                    except Exception:
+                        pass
+                    data['levels'][key] = {
+                        'value': float(eps),
+                        'spin': sigma,
+                        'spin_type': spin_type,
+                        'occupation': float(occ_map.get((n_quantum, l, sigma), 0.0)),
+                        'nist_label': ('D' if spin_type == 'majority' else ('u' if spin_type == 'minority' else None)),
+                    }
+        else:
+            # RHF：无自旋标签
+            for l, eps_arr in getattr(result, 'eigenvalues_by_l', {}).items():
+                for n_idx, eps in enumerate(eps_arr):
+                    n_quantum = n_idx + l + 1
+                    key = f"{n_quantum}{l_symbols[l]}"
+                    data['levels'][key] = {
+                        'value': float(eps),
+                        'spin': None,
+                        'spin_type': None,
+                        'occupation': float(occ_map.get((n_quantum, l, 'up'), 0.0) + occ_map.get((n_quantum, l, 'down'), 0.0)),
+                        'nist_label': None,
+                    }
+
+    # 波函数导出（均匀稀疏采样约 200 点）
+    # 注意：DFT 与 UHF 的存储结构为 (l, sigma) -> U[k, n_r]；RHF 为 l -> List[u]
+    if cfg is not None and hasattr(cfg, 'r'):
+        r = cfg.r
+        n_points = len(r)
+        sample_stride = max(1, n_points // 200)
+        sample_idx = np.arange(0, n_points, sample_stride)
+        if sample_idx[-1] != n_points - 1:
+            sample_idx = np.append(sample_idx, n_points - 1)
+        sampled_r = r[sample_idx]
+
+        # DFT: u_by_l_sigma
+        if args.method == 'DFT' and hasattr(result, 'u_by_l_sigma') and result.u_by_l_sigma:
+            for (l, sigma), U in result.u_by_l_sigma.items():
+                for n_idx in range(U.shape[0]):
+                    u = U[n_idx]
+                    label = f"{n_idx + l + 1}{l_symbols[l]}_{sigma}"
+                    data['wavefunctions'][label] = {
+                        'r': sampled_r.tolist(),
+                        'u': u[sample_idx].tolist(),
+                        'grid_type': args.grid,
+                        'n_total': int(n_points),
+                    }
+
+        # HF-UHF: orbitals_by_l_spin
+        if args.method == 'HF' and getattr(result, 'spin_mode', 'RHF') == 'UHF' and getattr(result, 'orbitals_by_l_spin', None) is not None:
+            for (l, sigma), u_list in result.orbitals_by_l_spin.items():
+                for n_idx, u in enumerate(u_list):
+                    label = f"{n_idx + l + 1}{l_symbols[l]}_{sigma}"
+                    data['wavefunctions'][label] = {
+                        'r': sampled_r.tolist(),
+                        'u': u[sample_idx].tolist(),
+                        'grid_type': args.grid,
+                        'n_total': int(n_points),
+                    }
+
+        # HF-RHF: orbitals_by_l
+        if args.method == 'HF' and getattr(result, 'orbitals_by_l', None) is not None and getattr(result, 'spin_mode', 'RHF') != 'UHF':
+            for l, u_list in result.orbitals_by_l.items():
+                for n_idx, u in enumerate(u_list):
+                    label = f"{n_idx + l + 1}{l_symbols[l]}"
+                    data['wavefunctions'][label] = {
+                        'r': sampled_r.tolist(),
+                        'u': u[sample_idx].tolist(),
+                        'grid_type': args.grid,
+                        'n_total': int(n_points),
+                    }
+
+    with open(export_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
     print(f"\n✅ 结果已导出到: {export_path}")
 
@@ -470,6 +669,20 @@ def main():
     )
     parser.add_argument("--progress-every", type=int, default=10, help="进度输出间隔")
 
+    # Numerov 可选参数（仅 solver=numerov 时有效）
+    parser.add_argument(
+        "--numerov-samples",
+        type=int,
+        default=None,
+        help="Numerov 能量扫描采样数（节点计数法）",
+    )
+    parser.add_argument(
+        "--numerov-bisection-iter",
+        type=int,
+        default=None,
+        help="Numerov 二分迭代次数（节点计数法）",
+    )
+
     args = parser.parse_args()
 
     # 检查数值参数组合，给出精度警告
@@ -500,7 +713,7 @@ def main():
 
     # 导出（如果需要）
     if args.export:
-        export_results(result, args.export, args)
+        export_results(result, args.export, args, cfg)
 
     # 导出供伪势生成器使用
     if args.export_ppgen:

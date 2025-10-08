@@ -18,6 +18,7 @@ from .numerov import (
     numerov_find_k_log,
     numerov_find_k_log_matching,
 )
+from .shooting import shooting_refine_energy
 from .occupations import OrbitalSpec, default_occupations
 from .utils import trapz, normalize_radial_u
 from .xc.lda import vx_dirac, lda_c_pz81, ex_dirac_density
@@ -63,9 +64,33 @@ def _solve_channel(
             raise ValueError(
                 "eig_solver='transformed' 需要提供 cfg.delta 和 cfg.Rp 参数"
             )
-        return solve_bound_states_transformed(
+        eps, U = solve_bound_states_transformed(
             r, l=l, v_of_r=v, delta=cfg.delta, Rp=cfg.Rp, k=k, use_sparse=True
         )
+        # 轻量打靶细化（仅细化通道内第一个束缚态，常用于 2p）
+        if getattr(cfg, "shooting_refine", False):
+            # 仅当请求的 (n,l) 在 shooting_channels 中时才细化；
+            # 此处仅细化最低态，对应 n = l + 1
+            n_quantum = l + 1
+            if (n_quantum, l) in getattr(cfg, "shooting_channels", []):
+                if len(eps) >= 1 and eps[0] < 0:
+                    try:
+                        e_ref, u_ref = shooting_refine_energy(
+                            r=r,
+                            l=l,
+                            v_eff=v,
+                            E_initial=float(eps[0]),
+                            target_norm=1.0,
+                            method="rk4",
+                            E_tol=(cfg.shooting_E_tol if hasattr(cfg, "shooting_E_tol") and cfg.shooting_E_tol is not None else 1e-6),
+                            max_iter=(cfg.shooting_max_iter if hasattr(cfg, "shooting_max_iter") and cfg.shooting_max_iter is not None else 50),
+                        )
+                        eps = np.array([e_ref] + list(eps[1:]))
+                        U[0] = u_ref
+                    except Exception:
+                        # 打靶失败时保持原值不变
+                        pass
+        return eps, U
     if cfg.eig_solver == "numerov":
         try:
             # 使用匹配法/节点计数的 Numerov：对数等距网格；能量窗口基于氢样估计
@@ -80,8 +105,12 @@ def _solve_channel(
                 k=k,
                 eps_min=eps_min,
                 eps_max=eps_max,
-                samples=120,
-                bisection_iter=50,
+                samples=(cfg.numerov_samples if hasattr(cfg, "numerov_samples") and cfg.numerov_samples is not None else 120),
+                bisection_iter=(
+                    cfg.numerov_bisection_iter
+                    if hasattr(cfg, "numerov_bisection_iter") and cfg.numerov_bisection_iter is not None
+                    else 50
+                ),
             )
             wloc = trapezoid_weights(r)
             for j in range(U.shape[0]):
@@ -107,7 +136,28 @@ def _solve_channel(
         return solve_bound_states_fd5_auxlinear(r, l=l, v_of_r=v, k=k)
     else:
         # 等距网格：可以安全使用FD
-        return solve_bound_states_fd(r, l=l, v_of_r=v, k=k)
+        eps, U = solve_bound_states_fd(r, l=l, v_of_r=v, k=k)
+        # 可选：在非 transformed 求解器下，同样支持打靶细化
+        if getattr(cfg, "shooting_refine", False):
+            n_quantum = l + 1
+            if (n_quantum, l) in getattr(cfg, "shooting_channels", []):
+                if len(eps) >= 1 and eps[0] < 0:
+                    try:
+                        e_ref, u_ref = shooting_refine_energy(
+                            r=r,
+                            l=l,
+                            v_eff=v,
+                            E_initial=float(eps[0]),
+                            target_norm=1.0,
+                            method="rk4",
+                            E_tol=(cfg.shooting_E_tol if hasattr(cfg, "shooting_E_tol") and cfg.shooting_E_tol is not None else 1e-6),
+                            max_iter=(cfg.shooting_max_iter if hasattr(cfg, "shooting_max_iter") and cfg.shooting_max_iter is not None else 50),
+                        )
+                        eps = np.array([e_ref] + list(eps[1:]))
+                        U[0] = u_ref
+                    except Exception:
+                        pass
+        return eps, U
 
 
 @dataclass
@@ -162,6 +212,15 @@ class SCFConfig:
     Rp: float | None = None  # 网格参数 R_p（从 radial_grid_exp_transformed 获取）
     # 自旋处理模式："LSDA"（自旋极化）或 "LDA"（自旋非极化）
     spin_mode: str = "LSDA"
+    # Numerov 相关参数（仅当 eig_solver="numerov" 时使用；None 表示采用默认值）
+    numerov_samples: int | None = None
+    numerov_bisection_iter: int | None = None
+    # 打靶细化（可选开关）
+    shooting_refine: bool = False
+    # 需要细化的 (n, l) 通道列表，例如 [(2,1)] 表示 2p
+    shooting_channels: List[Tuple[int, int]] = None  # 初始化在 __post_init__
+    shooting_E_tol: float | None = None
+    shooting_max_iter: int | None = None
 
     def __post_init__(self):
         """参数验证。"""
@@ -169,6 +228,8 @@ class SCFConfig:
             raise ValueError(
                 f"spin_mode 必须为 'LSDA' 或 'LDA'，当前值: {self.spin_mode}"
             )
+        if self.shooting_channels is None:
+            self.shooting_channels = []
 
 
 @dataclass
