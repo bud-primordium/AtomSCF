@@ -215,7 +215,7 @@ python examples/run_atom.py --Z 6 --method HF --hf-mode UHF --n 1000  # Carbon U
 | **ROHF (参考)** | -37.689 | -11.326 | -0.706 | -0.433 | - |
 
 **注**：Carbon 基态为 ³P（开壳层），RHF/UHF 与 ROHF 的 2p 能级差异较大属于预期。
-```
+
 
 **默认推荐配置**：
 - `--grid exp`：指数网格（核附近密，远处疏）
@@ -274,9 +274,41 @@ PYTHONPATH=src python examples/run_c_lsda_vwn.py
 
 | 原子 | Z | SCF 轮数 | 计算时间 | E_total (Ha) | NIST (Ha) | 相对误差 |
 |------|---|---------|---------|--------------|-----------|----------|
-| **H** | 1 | 33 | 46.5s | -0.42677 | -0.47867 | **10.84%** |
-| **C** | 6 | 45 | 104.8s | -36.52579 | -37.47003 | **2.52%** |
-| **Al** | 13 | 48 | 112.0s | -237.69169 | -241.32116 | **1.50%** |
+| **H** | 1 | 33 | ~47s | -0.42681 | -0.47867 | **10.9%** |
+| **C** | 6 | 45 | ~105s | -36.52197 | -37.47003 | **2.5%** |
+| **Al** | 13 | 48 | ~112s | -237.65390 | -241.32116 | **1.5%** |
+
+**注**：计算时间为作者笔记本的参考值，不同硬件会有差异。
+
+### 课程作业完整示例
+
+本仓库包含电子结构理论课程作业 2-3 的完整实现，涵盖 H、He、Li、C、Al 五种原子的 LSDA/RHF/UHF 多方法对比计算：
+
+- **LaTeX 报告**：[assignment_2-3.pdf](assignment_2-3.pdf) | [源码](assignment_2-3.tex)
+- **测试结果**：[test_results/](test_results/) - H/He/Li/C/Al 的 JSON 格式计算数据
+- **波函数图**：[figures/](figures/) - 所有原子的多方法对比波函数图
+- **生成脚本**：[scripts/](scripts/) - 可重复的计算与绘图脚本
+  - `run_*.sh` - 批量计算脚本（LSDA/RHF/UHF）
+  - `plot_comparisons.py` - 波函数对比图生成
+  - `extract_results.py` - 结果汇总与验证
+- **计算日志**：[logs/](logs/) - 完整的 SCF 收敛日志
+
+**关键结果**（n=2000，exp 网格，transformed 求解器）：
+- H 原子：LSDA 自旋极化展示 1s↑/↓分裂，2s 未占据态正能量（SIE 效应）
+- C 原子：LSDA/RHF/UHF 三方法对比，2p 三重态基态物理本质
+- 所有原子：能级与 NIST 参考对比，相对误差 1.5%-10.9%
+
+**使用方式**：
+```bash
+# 重现 C 原子计算（LSDA + RHF + UHF）
+bash scripts/run_c_calculations.sh
+
+# 重现所有对比图
+python scripts/plot_comparisons.py
+
+# 验证结果一致性
+python scripts/extract_results.py
+```
 
 ---
 

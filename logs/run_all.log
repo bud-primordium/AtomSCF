@@ -1,0 +1,37 @@
+=============================================
+AtomSCF 作业计算全流程
+开始时间: 2025-10-08 16:04:58
+=============================================
+
+═══ 阶段 1/3：氢原子计算 ═══
+✓✓✓ 氢原子计算完成
+
+═══ 阶段 2/3：碳原子计算 ═══
+✓✓✓ 碳原子计算完成
+
+═══ 阶段 3/3：额外原子计算 ═══
+✓✓✓ 额外原子计算完成
+
+=============================================
+✅ 所有计算全部完成！
+结束时间: 2025-10-08 16:19:39
+总用时: 14 分 41 秒
+=============================================
+
+生成的 JSON 文件（共 8 个）：
+-rw-r--r--  1 gilbert  staff   281K 10月  8 16:19 ../test_results/Al_lsda.json
+-rw-r--r--  1 gilbert  staff   281K 10月  8 16:08 ../test_results/C_lsda.json
+-rw-r--r--  1 gilbert  staff    35K 10月  8 16:12 ../test_results/C_rhf.json
+-rw-r--r--  1 gilbert  staff    70K 10月  8 16:16 ../test_results/C_uhf.json
+-rw-r--r--  1 gilbert  staff   281K 10月  8 16:05 ../test_results/H_lsda.json
+-rw-r--r--  1 gilbert  staff    24K 10月  8 16:07 ../test_results/H_uhf.json
+-rw-r--r--  1 gilbert  staff   281K 10月  8 16:17 ../test_results/He_lsda.json
+-rw-r--r--  1 gilbert  staff   281K 10月  8 16:18 ../test_results/Li_lsda.json
+
+日志文件位置：
+  - 总日志：logs/run_all.log
+  - 氢原子：logs/h_calculations.log
+  - 碳原子：logs/c_calculations.log
+  - 额外原子：logs/extra_atoms.log
+
+下一步：运行 plot_comparisons.py 生成波函数对比图
