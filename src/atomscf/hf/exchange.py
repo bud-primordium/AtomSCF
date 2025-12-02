@@ -198,7 +198,10 @@ def exchange_operator_s(
 
             # 累加交换贡献：-n_i * a_0 * R^0 * u_i
             # 由于 a_0 = 1.0，简化为：-n_i * R^0 * u_i
-            Ku -= n_i * R0 * u_i
+            # [2025-11-29 Fix] 引入自旋平均因子 0.5 (n_eff = n_i / 2)
+            # 这确保了与 exchange_operator_general 一致，并正确处理闭壳层 (He, Ne, etc.)
+            # 对于 H (1s1)，这将产生自旋平均结果 (-0.5 K)，这是赝势生成的预期行为
+            Ku -= (n_i / 2.0) * R0 * u_i
 
         return Ku
 
@@ -318,6 +321,7 @@ def exchange_operator_general(
 
                     # 占据数归一化：考虑空间简并和自旋简并
                     # n_i 为子壳层总占据数，需除以 (2l+1) 个 m 态和 2 个自旋态
+                    # [2025-11-29 Fix] 恢复 / 2.0 以保持自旋平均逻辑一致性
                     g_m = 2 * l_occ + 1  # 空间简并度
                     n_eff = n_i / (g_m * 2.0)  # 每个 (m, σ) 的平均占据
                     # 累加交换贡献
