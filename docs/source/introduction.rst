@@ -49,7 +49,7 @@ Hartree-Fock 方法
 
 - **交换积分**:
 
-  - Slater 积分径向计算（$R^k$ 两段累积法）
+  - Slater 积分径向计算（:math:`R^k` 两段累积法）
   - 角动量耦合系数（Wigner 3j 符号）
   - 多角动量通道耦合（s-s, s-p, p-p, ...）
 
@@ -63,7 +63,7 @@ Hartree-Fock 方法
 
 - **交换泛函**:
 
-  - Dirac 交换: $E_x = -C_x \\int n^{4/3}(r) dr$
+  - Dirac 交换: :math:`E_x = -C_x \int n^{4/3}(r) dr`
 
 - **关联泛函**:
 

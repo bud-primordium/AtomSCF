@@ -293,7 +293,7 @@ SCF 不收敛
 轨道能不合理
 ~~~~~~~~~~~~
 
-**症状**: $\\varepsilon_{2s} < \\varepsilon_{1s}$ (能级倒序)
+**症状**: :math:`\varepsilon_{2s} < \varepsilon_{1s}` (能级倒序)
 
 **原因**: 网格太粗或求解器不适配
 

@@ -9,7 +9,7 @@ Hohenberg-Kohn 定理
 定理 1：密度唯一性
 ~~~~~~~~~~~~~~~~~~
 
-基态电子密度 $n(\\mathbf{r})$ 唯一确定外势 $v_{\\text{ext}}(\\mathbf{r})$（相差常数）。
+基态电子密度 :math:`n(\mathbf{r})` 唯一确定外势 :math:`v_\mathrm{ext}(\mathbf{r})` （相差常数）。
 
 **推论**：所有基态性质都是密度的泛函。
 
@@ -20,9 +20,9 @@ Hohenberg-Kohn 定理
 
 .. math::
 
-   E[n] = T[n] + V_{\\text{ext}}[n] + V_{ee}[n]
+   E[n] = T[n] + V_{\mathrm{ext}}[n] + V_{ee}[n]
 
-在归一化约束 $\\int n(\\mathbf{r}) d^3\\mathbf{r} = N$ 下，真实基态密度使 $E[n]$ 最小。
+在归一化约束 :math:`\int n(\mathbf{r}) d^3\mathbf{r} = N` 下，真实基态密度使 :math:`E[n]` 最小。
 
 Kohn-Sham 方法
 --------------
@@ -37,25 +37,25 @@ Kohn-Sham 方程
 
 .. math::
 
-   \\left[ -\\frac{1}{2}\\nabla^2 + v_s(\\mathbf{r}) \\right] \\psi_i = \\varepsilon_i \\psi_i
+   \left[ -\frac{1}{2}\nabla^2 + v_s(\mathbf{r}) \right] \psi_i = \varepsilon_i \psi_i
 
 有效势：
 
 .. math::
 
-   v_s(\\mathbf{r}) = v_{\\text{ext}}(\\mathbf{r}) + v_H(\\mathbf{r}) + v_{xc}(\\mathbf{r})
+   v_s(\mathbf{r}) = v_{\mathrm{ext}}(\mathbf{r}) + v_H(\mathbf{r}) + v_{xc}(\mathbf{r})
 
-- $v_H$: Hartree 势（同 HF）
-- $v_{xc}$: 交换-关联势（DFT 核心）
+- :math:`v_H`: Hartree 势（同 HF）
+- :math:`v_{xc}`: 交换-关联势（DFT 核心）
 
 交换-关联泛函
 ~~~~~~~~~~~~~
 
 .. math::
 
-   v_{xc}(\\mathbf{r}) = \\frac{\\delta E_{xc}[n]}{\\delta n(\\mathbf{r})}
+   v_{xc}(\mathbf{r}) = \frac{\delta E_{xc}[n]}{\delta n(\mathbf{r})}
 
-$E_{xc}[n]$ 包含所有量子多体效应。
+:math:`E_{xc}[n]` 包含所有量子多体效应。
 
 局域密度近似 (LDA)
 ------------------
@@ -63,13 +63,13 @@ $E_{xc}[n]$ 包含所有量子多体效应。
 基本假设
 ~~~~~~~~
 
-局域密度近似：系统在点 $\\mathbf{r}$ 处的交换-关联能密度等于均匀电子气在相同密度下的值：
+局域密度近似：系统在点 :math:`\mathbf{r}` 处的交换-关联能密度等于均匀电子气在相同密度下的值：
 
 .. math::
 
-   E_{xc}^{\\text{LDA}}[n] = \\int n(\\mathbf{r}) \\varepsilon_{xc}(n(\\mathbf{r})) d^3\\mathbf{r}
+   E_{xc}^{\mathrm{LDA}}[n] = \int n(\mathbf{r}) \varepsilon_{xc}(n(\mathbf{r})) d^3\mathbf{r}
 
-其中 $\\varepsilon_{xc}(n)$ 为均匀电子气的单位体积交换-关联能。
+其中 :math:`\varepsilon_{xc}(n)` 为均匀电子气的单位体积交换-关联能。
 
 交换部分
 ~~~~~~~~
@@ -78,9 +78,9 @@ Dirac 交换（精确解）：
 
 .. math::
 
-   \\varepsilon_x^{\\text{Dirac}}(n) = -C_x n^{1/3}
+   \varepsilon_x^{\mathrm{Dirac}}(n) = -C_x n^{1/3}
 
-其中 $C_x = \\frac{3}{4}\\left(\\frac{3}{\\pi}\\right)^{1/3} \\approx 0.7386$。
+其中 :math:`C_x = \frac{3}{4}\left(\frac{3}{\pi}\right)^{1/3} \approx 0.7386`。
 
 关联部分
 ~~~~~~~~
@@ -96,25 +96,25 @@ Dirac 交换（精确解）：
 自旋极化
 ~~~~~~~~
 
-分别处理自旋 $\\uparrow$ 和 $\\downarrow$ 密度：
+分别处理自旋 :math:`\uparrow` 和 :math:`\downarrow` 密度：
 
 .. math::
 
-   n(\\mathbf{r}) = n_{\\uparrow}(\\mathbf{r}) + n_{\\downarrow}(\\mathbf{r})
+   n(\mathbf{r}) = n_{\uparrow}(\mathbf{r}) + n_{\downarrow}(\mathbf{r})
 
 自旋极化度：
 
 .. math::
 
-   \\zeta(\\mathbf{r}) = \\frac{n_{\\uparrow} - n_{\\downarrow}}{n_{\\uparrow} + n_{\\downarrow}}
+   \zeta(\mathbf{r}) = \frac{n_{\uparrow} - n_{\downarrow}}{n_{\uparrow} + n_{\downarrow}}
 
 LSDA 能量
 ~~~~~~~~~
 
 .. math::
 
-   E_{xc}^{\\text{LSDA}}[n_{\\uparrow}, n_{\\downarrow}] =
-   \\int n(\\mathbf{r}) \\varepsilon_{xc}(n_{\\uparrow}, n_{\\downarrow}) d^3\\mathbf{r}
+   E_{xc}^{\mathrm{LSDA}}[n_{\uparrow}, n_{\downarrow}] =
+   \int n(\mathbf{r}) \varepsilon_{xc}(n_{\uparrow}, n_{\downarrow}) d^3\mathbf{r}
 
 分别求解自旋上/下的 Kohn-Sham 方程。
 
@@ -126,32 +126,32 @@ Perdew-Zunger 关联 (PZ81)
 
 基于 Ceperley-Alder 量子蒙特卡罗数据拟合：
 
-**高密度区** ($r_s < 1$)：
+**高密度区** (:math:`r_s < 1`)：
 
 .. math::
 
-   \\varepsilon_c^{\\text{PZ}}(r_s, \\zeta) = A \\ln r_s + B + C r_s \\ln r_s + D r_s
+   \varepsilon_c^{\mathrm{PZ}}(r_s, \zeta) = A \ln r_s + B + C r_s \ln r_s + D r_s
 
-**低密度区** ($r_s \\geq 1$)：
+**低密度区** (:math:`r_s \geq 1`)：
 
 .. math::
 
-   \\varepsilon_c^{\\text{PZ}}(r_s, \\zeta) = \\frac{\\gamma}{1 + \\beta_1 \\sqrt{r_s} + \\beta_2 r_s}
+   \varepsilon_c^{\mathrm{PZ}}(r_s, \zeta) = \frac{\gamma}{1 + \beta_1 \sqrt{r_s} + \beta_2 r_s}
 
-其中 $r_s = (3/(4\\pi n))^{1/3}$ 为 Wigner-Seitz 半径。
+其中 :math:`r_s = (3/(4\pi n))^{1/3}` 为 Wigner-Seitz 半径。
 
 自旋内插
 ~~~~~~~~
 
 .. math::
 
-   \\varepsilon_c(n, \\zeta) = \\varepsilon_c(n, 0) + \\alpha_c(r_s) \\frac{f(\\zeta)}{f''(0)} (1 - \\zeta^4)
+   \varepsilon_c(n, \zeta) = \varepsilon_c(n, 0) + \alpha_c(r_s) \frac{f(\zeta)}{f''(0)} (1 - \zeta^4)
 
 插值函数：
 
 .. math::
 
-   f(\\zeta) = \\frac{(1+\\zeta)^{4/3} + (1-\\zeta)^{4/3} - 2}{2^{4/3} - 2}
+   f(\zeta) = \frac{(1+\zeta)^{4/3} + (1-\zeta)^{4/3} - 2}{2^{4/3} - 2}
 
 Vosko-Wilk-Nusair 关联 (VWN)
 -----------------------------
@@ -163,22 +163,22 @@ RPA 拟合
 
 .. math::
 
-   \\varepsilon_c^{\\text{VWN}}(r_s) = \\frac{A}{2} \\left\\{
-   \\ln\\frac{x^2}{X(x)} + \\frac{2b}{Q} \\tan^{-1}\\frac{Q}{2x+b}
-   - \\frac{bx_0}{X(x_0)} \\left[ \\ln\\frac{(x-x_0)^2}{X(x)} + \\frac{2(b+2x_0)}{Q} \\tan^{-1}\\frac{Q}{2x+b} \\right]
-   \\right\\}
+   \varepsilon_c^{\mathrm{VWN}}(r_s) = \frac{A}{2} \left\{
+   \ln\frac{x^2}{X(x)} + \frac{2b}{Q} \tan^{-1}\frac{Q}{2x+b}
+   - \frac{bx_0}{X(x_0)} \left[ \ln\frac{(x-x_0)^2}{X(x)} + \frac{2(b+2x_0)}{Q} \tan^{-1}\frac{Q}{2x+b} \right]
+   \right\}
 
 其中：
 
 .. math::
 
-   x = \\sqrt{r_s}, \\quad X(x) = x^2 + bx + c, \\quad Q = \\sqrt{4c - b^2}
+   x = \sqrt{r_s}, \quad X(x) = x^2 + bx + c, \quad Q = \sqrt{4c - b^2}
 
 参数值
 ~~~~~~
 
-- 顺磁态：$A = 0.0621814$, $b = 3.72744$, $c = 12.9352$, $x_0 = -0.10498$
-- 铁磁态：$A = 0.0310907$, $b = 7.06042$, $c = 18.0578$, $x_0 = -0.32500$
+- 顺磁态：:math:`A = 0.0621814`, :math:`b = 3.72744`, :math:`c = 12.9352`, :math:`x_0 = -0.10498`
+- 铁磁态：:math:`A = 0.0310907`, :math:`b = 7.06042`, :math:`c = 18.0578`, :math:`x_0 = -0.32500`
 
 自旋插值：与 PZ81 类似。
 
@@ -190,21 +190,21 @@ RPA 拟合
 
 .. math::
 
-   \\left[ -\\frac{1}{2}\\frac{d^2}{dr^2} + \\frac{\\ell(\\ell+1)}{2r^2} + v_s^{\\sigma}(r) \\right] u_{n\\ell\\sigma} = \\varepsilon_{n\\ell\\sigma} u_{n\\ell\\sigma}
+   \left[ -\frac{1}{2}\frac{d^2}{dr^2} + \frac{\ell(\ell+1)}{2r^2} + v_s^{\sigma}(r) \right] u_{n\ell\sigma} = \varepsilon_{n\ell\sigma} u_{n\ell\sigma}
 
 有效势（自旋分辨）：
 
 .. math::
 
-   v_s^{\\sigma}(r) = -\\frac{Z}{r} + v_H(r) + v_{xc}^{\\sigma}[n_{\\uparrow}, n_{\\downarrow}](r)
+   v_s^{\sigma}(r) = -\frac{Z}{r} + v_H(r) + v_{xc}^{\sigma}[n_{\uparrow}, n_{\downarrow}](r)
 
 交换-关联势
 ~~~~~~~~~~~
 
 .. math::
 
-   v_{xc}^{\\sigma}(r) = \\frac{\\partial (n \\varepsilon_{xc})}{\\partial n_{\\sigma}}
-   = \\varepsilon_{xc} + n \\frac{\\partial \\varepsilon_{xc}}{\\partial n_{\\sigma}}
+   v_{xc}^{\sigma}(r) = \frac{\partial (n \varepsilon_{xc})}{\partial n_{\sigma}}
+   = \varepsilon_{xc} + n \frac{\partial \varepsilon_{xc}}{\partial n_{\sigma}}
 
 需要对泛函求变分导数。
 
@@ -215,11 +215,11 @@ RPA 拟合
 
 .. math::
 
-   E_{\\text{LSDA}} = T_s + V_{\\text{ext}} + E_H + E_{xc}
+   E_{\mathrm{LSDA}} = T_s + V_{\mathrm{ext}} + E_H + E_{xc}
 
 其中：
-- $T_s = \\sum_{i\\sigma} n_i \\int u_i^{\\sigma} \\left(-\\frac{1}{2}\\frac{d^2}{dr^2} + \\frac{\\ell(\\ell+1)}{2r^2}\\right) u_i^{\\sigma} dr$
-- $E_{xc} = \\int n(r) \\varepsilon_{xc}(n_{\\uparrow}, n_{\\downarrow}) 4\\pi r^2 dr$
+- :math:`T_s = \sum_{i\sigma} n_i \int u_i^{\sigma} \left(-\frac{1}{2}\frac{d^2}{dr^2} + \frac{\ell(\ell+1)}{2r^2}\right) u_i^{\sigma} dr`
+- :math:`E_{xc} = \int n(r) \varepsilon_{xc}(n_{\uparrow}, n_{\downarrow}) 4\pi r^2 dr`
 
 DFT vs HF 对比
 --------------
@@ -232,8 +232,8 @@ DFT vs HF 对比
      - HF
      - DFT (LSDA)
    * - 基本变量
-     - 多电子波函数 $\\Psi$
-     - 电子密度 $n(\\mathbf{r})$
+     - 多电子波函数 :math:`\Psi`
+     - 电子密度 :math:`n(\mathbf{r})`
    * - 交换
      - 精确（非局域）
      - 近似（局域）
@@ -241,8 +241,8 @@ DFT vs HF 对比
      - 无
      - 包含（近似）
    * - 计算复杂度
-     - $O(N^4)$
-     - $O(N^3)$
+     - :math:`O(N^4)`
+     - :math:`O(N^3)`
    * - 精度（能量）
      - 闭壳层好，开壳层差
      - 一般好
@@ -260,12 +260,12 @@ DFT vs HF 对比
 ~~~~~~~~~~~~~~~~~~~~~
 
 LSDA 自旋极化配置：
-- $n_{\\uparrow}$: 1s¹ 2s¹ 2p²（4 个 $\\uparrow$ 电子）
-- $n_{\\downarrow}$: 1s¹ 2s¹（2 个 $\\downarrow$ 电子）
+- :math:`n_{\uparrow}`: 1s¹ 2s¹ 2p²（4 个 :math:`\uparrow` 电子）
+- :math:`n_{\downarrow}`: 1s¹ 2s¹（2 个 :math:`\downarrow` 电子）
 
-总密度：$n = n_{\\uparrow} + n_{\\downarrow}$
+总密度：:math:`n = n_{\uparrow} + n_{\downarrow}`
 
-自旋极化：$\\zeta = (4-2)/6 = 1/3$
+自旋极化：:math:`\zeta = (4-2)/6 = 1/3`
 
 收敛技巧
 --------
