@@ -287,7 +287,6 @@ def numerov_find_k_log_matching(
         yL = _numerov_forward(y0L, y1L, h, Q)
         # 右端初值（远端指数衰减，按局部 kappa 给两点初值）
         # kappa^2 = 2 (V_eff_tot - eps)（束缚态 E < V，渐近衰减）
-        # 参考 codex reply_check_4.md 第 68 行
         Vtot = v_eff + 0.5 * l * (l + 1.0) / np.maximum(r * r, 1e-30)
         kappa2 = 2.0 * np.maximum(Vtot - eps, 0.0)  # 修正符号
         kappa = np.sqrt(kappa2 + 1e-30)

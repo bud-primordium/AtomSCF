@@ -36,11 +36,8 @@ def get_ref_data_path() -> Path | None:
         if path.exists():
             return path
 
-    # 尝试默认位置（相对于 src/atomscf）
-    default_path = Path(__file__).parent.parent.parent / ".workenv" / "For_AtomSCF" / "ref_data"
-    if default_path.exists():
-        return default_path
-
+    # 内嵌数据已包含 Z=1-18，无需外部路径
+    # 若需扩展数据，请设置 ATOMSCF_REF_PATH 环境变量
     return None
 
 

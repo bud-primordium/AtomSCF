@@ -118,7 +118,7 @@ def radial_grid_log(n: int, rmin: float, rmax: float) -> tuple[np.ndarray, np.nd
     Notes
     -----
     - 对数网格能在小 :math:`r` 处加密采样，适合处理库仑势与核附近行为。
-    - 该网格满足 ln(r) 等差，适用于 Numerov 方法（参考 codex reply_check_4.md）
+    - 该网格满足 ln(r) 等差，适用于 Numerov 方法。
     - 若后续采用有限差分离散二阶导数，需使用非均匀网格的差分公式（本包已支持）。
     """
     if n < 2:
