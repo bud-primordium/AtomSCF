@@ -8,6 +8,7 @@ AtomSCF 文档
    :caption: 目录
 
    introduction
+   tutorials/index
    algorithm/index
    api/index
    examples/index

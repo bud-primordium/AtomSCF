@@ -20,3 +20,6 @@ AtomSCF.xml
 docs/build/
 docs/source/api/generated/
 build/
+
+# Archived old tutorials
+docs/source/tutorials/_archived/
