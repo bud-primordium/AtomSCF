@@ -677,7 +677,10 @@ class HFSCFGeneralConfig:
     occ_by_l : dict[int, list[float]]
         按 l 分组的占据数配置（RHF 模式）
         格式：{l: [n_1, n_2, ...]} 表示该 l 通道的各占据态占据数
-        例：C (1s² 2s² 2p²) → {0: [2.0, 2.0], 1: [2.0]}
+
+        例::
+
+            C (1s² 2s² 2p²) → {0: [2.0, 2.0], 1: [2.0]}
     eigs_per_l : dict[int, int]
         每个 l 通道求解的本征态数量
         例：{0: 2, 1: 1} 表示求解 2 个 s 态和 1 个 p 态
@@ -688,9 +691,12 @@ class HFSCFGeneralConfig:
     occ_by_l_spin : dict[int, dict[str, list[float]]] | None, optional
         自旋分辨占据数配置（UHF 模式）
         格式：{l: {'up': [n_1, ...], 'down': [n_1, ...]}}
-        例：C ³P 态 → {0: {'up': [1.0, 1.0], 'down': [1.0, 1.0]},
-                        1: {'up': [2.0], 'down': [0.0]}}
         若为 None 且 spin_mode='UHF'，自动从 occ_by_l 均分生成
+
+        例（C ³P 态）::
+
+            {0: {'up': [1.0, 1.0], 'down': [1.0, 1.0]},
+             1: {'up': [2.0], 'down': [0.0]}}
     mix_alpha : float
         密度混合参数
     tol : float

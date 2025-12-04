@@ -141,7 +141,7 @@ def radial_grid_exp_transformed(
 ) -> tuple[np.ndarray, np.ndarray, float, float]:
     r"""生成用于变量变换方法的指数网格。
 
-    网格公式参考文献 [1]_：
+    网格公式参考文献 [ExpGridTransform]_：
 
     .. math::
         r(j) = R_p(\exp(j\delta) - 1) + r_{\min}, \quad j=0,1,\ldots,j_{\max}

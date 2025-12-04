@@ -73,7 +73,7 @@ from .utils import normalize_radial_u
 注意事项
 ========
 
-- 所有求解器返回归一化的径向波函数 u(r)，满足 ∫ |u(r)|² dr = 1
+- 所有求解器返回归一化的径向波函数 :math:`u(r)`，满足 :math:`\int \\lvert u(r) \\rvert^2\,dr = 1`
 - 能量按升序排列（束缚态从浅到深）
 - 对于高激发态，可能需要调整网格参数或能量搜索范围
 """
@@ -171,7 +171,7 @@ def radial_hamiltonian_matrix(
     l : int
         角动量量子数 :math:`\ell`。
     v_of_r : numpy.ndarray
-        势能数组 :math:`v(r_i)`，长度与 :data:`r` 一致。
+        势能数组 :math:`v(r_i)`，长度与 ``r`` 一致。
 
     Returns
     -------
@@ -220,35 +220,34 @@ def solve_bound_states_fd(
     v_of_r: np.ndarray,
     k: int = 4,
 ) -> tuple[np.ndarray, np.ndarray]:
-    r"""基于有限差分 Hamiltonian 的径向束缚态求解（取低端 :math:`k` 个本征对）。
+    r"""基于有限差分 Hamiltonian 的径向束缚态求解（取低端 k 个本征对）。
 
-    该方法将径向 Hamiltonian 离散为内部点的对称矩阵，调用密集线性代数本征求解。
+    该方法将径向 Hamiltonian 离散为内部点的对称矩阵，调用密集线性代数本征求解，
     适合教学验证（例如氢样势下的 1s 能级），在网格较大时可能较慢。
 
     Parameters
     ----------
     r : numpy.ndarray
-        单调递增的径向网格 :math:`(r_0,\dots,r_{N-1})`。
+        单调递增的径向网格 (r_0,...,r_{N-1})。
     l : int
-        角动量量子数 :math:`\ell`。
+        角动量量子数。
     v_of_r : numpy.ndarray
-        势能数组 :math:`v(r_i)`，长度与 :data:`r` 一致。
+        势能数组 v(r_i)，长度与 ``r`` 一致。
     k : int, optional
         返回最低能的本征态个数（默认 4）。
 
     Returns
     -------
     eps : numpy.ndarray
-        低端 :math:`k` 个本征值（按升序）。
+        低端 k 个本征值（按升序）。
     U : numpy.ndarray
-        对应的径向函数矩阵 :math:`U`，形状 :math:`(k, N)`，已在 :math:`[r_0,r_{N-1}]` 上按
-        :math:`\int u^2\,dr=1` 归一，并在两端补零以满足 Dirichlet 边界。
+        对应的径向函数矩阵 ``U``，形状 ``(k, N)``，已在区间 ``[r_0, r_{N-1}]`` 上按
+        ``∫ u^2 dr = 1`` 归一，并在两端补零以满足 Dirichlet 边界。
 
-    Notes
-    -----
-    - 实际内部计算在 :math:`(r_1,\dots,r_{N-2})` 上进行，端点边界条件 :math:`u=0`。
-    - 若只需氢样势 1s 态，建议选择较大的 :math:`r_\max`（如 50–100）与足够细的网格以降低边界误差。
-    - 使用 scipy.linalg.eigh 的 subset_by_index 只求前 k 个本征值以提升性能。
+
+    实际内部计算在 ``(r_1,\dots,r_{N-2})`` 区间进行，端点边界条件 ``u=0``。
+    若只需氢样势 1s 态，建议选择较大的 ``r_max``（如 50–100）与足够细的网格以降低边界误差。
+    使用 scipy.linalg.eigh 的 subset_by_index 只求前 k 个本征值以提升性能。
     """
     H, r_inner = radial_hamiltonian_matrix(r, l, v_of_r)
     k_actual = min(k, H.shape[0])
@@ -312,7 +311,7 @@ def radial_hamiltonian_matrix_linear_fd5(
     l : int
         角动量量子数 :math:`\ell`。
     v_of_r : numpy.ndarray
-        势能数组 :math:`v(r_i)`，长度与 :data:`r` 一致。
+        势能数组 :math:`v(r_i)`，长度与 ``r`` 一致。
 
     Returns
     -------
@@ -387,7 +386,7 @@ def solve_bound_states_fd5(
     l : int
         角动量量子数 :math:`\ell`。
     v_of_r : numpy.ndarray
-        势能数组 :math:`v(r_i)`，长度与 :data:`r` 一致。
+        势能数组 :math:`v(r_i)`，长度与 ``r`` 一致。
     k : int, optional
         返回最低能的本征态个数（默认 4）。
 
@@ -468,7 +467,7 @@ def solve_bound_states_transformed(
 ) -> tuple[np.ndarray, np.ndarray]:
     r"""使用变量变换方法求解径向束缚态（适用于指数网格）。
 
-    方法基于文献 [1]_：
+    方法基于文献 [ExpGridTransform]_：
 
     网格：
         :math:`r(j) = R_p(\exp(j\delta) - 1) + r_{\min}, \quad j=0,1,\ldots,j_{\max}`
@@ -490,7 +489,7 @@ def solve_bound_states_transformed(
         - :math:`H[i,i\pm1] = -1`
         - :math:`B[i,i] = 2\delta^2 R_p^2 \exp(2\delta(i+1))`
 
-    **关键处理**：去掉 j=0 点避免奇异性（参考 [1]_ 第54行）
+    **关键处理**：去掉 j=0 点避免奇异性（参考 [ExpGridTransform]_ 第54行）
 
     Parameters
     ----------
