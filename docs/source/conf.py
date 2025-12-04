@@ -27,6 +27,7 @@ extensions = [
     "sphinx.ext.coverage",
     "sphinx_autodoc_typehints",
     "myst_parser",
+    "nbsphinx",
 ]
 
 # Napoleon settings (for Google/NumPy style docstrings)
@@ -62,8 +63,9 @@ autosummary_imported_members = False
 templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
-# directories to ignore when looking for source files.
-exclude_patterns = []
+# directories to ignore when looking for source files。
+# Notebook 检查点会导致重复构建，直接排除
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**/.ipynb_checkpoints"]
 
 # The language for content produced by Sphinx.
 language = "zh_CN"
@@ -112,3 +114,10 @@ myst_enable_extensions = [
     "smartquotes",
     "replacements",
 ]
+
+# nbsphinx 配置：依赖预先保存的输出，避免 CI 环境重复执行 Notebook
+nbsphinx_execute = "never"
+nbsphinx_timeout = 600
+nbsphinx_allow_errors = False
+nbsphinx_codecell_lexer = "ipython3"
+nbsphinx_widgets_path = ""
